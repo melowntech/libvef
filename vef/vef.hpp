@@ -21,6 +21,8 @@ struct Texture {
     math::Size2 size;
 
     Texture() {}
+
+    Texture(const boost::filesystem::path &path) : path(path) {}
 };
 
 struct Mesh {
