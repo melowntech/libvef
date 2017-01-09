@@ -57,7 +57,7 @@ Manifest parse1(const Json::Value &value, const fs::path &basePath)
                                , "manifest.windows.lods.mesh"));
 
             Json::get(path, jmesh, "path");
-            lod.mesh.path = window.path / path;
+            lod.mesh.path = lod.path / path;
 
             for (const auto &jtexture
                      : Json::check(jlod["atlas"], Json::arrayValue
@@ -66,7 +66,7 @@ Manifest parse1(const Json::Value &value, const fs::path &basePath)
                 Json::check(jtexture, Json::objectValue
                             , "manifest.windows.lods.atlas[[");
                 Json::get(path, jtexture, "path");
-                lod.atlas.emplace_back(path);
+                lod.atlas.emplace_back(lod.path / path);
                 auto &texture(lod.atlas.back());
 
                 Json::get(texture.size.width, jtexture, "size", 0);
