@@ -19,9 +19,27 @@ namespace {
 
 namespace constants {
 std::string ManifestName("manifest.json");
-std::string MeshName("mesh.obj");
-// std::string TextureNameFormat("texture-%d.jp2");
-std::string TextureNameFormat("texture-%d.jpg");
+std::string MeshNameFormat("mesh.%s");
+std::string TextureNameFormat("texture-%d.%s");
+}
+
+std::string asExtension(Mesh::Format format)
+{
+    switch (format) {
+    case Mesh::Format::obj: return "obj";
+    case Mesh::Format::gzippedObj: return "obj.gz";
+    }
+    throw;
+}
+
+std::string asExtension(Texture::Format format)
+{
+    switch (format) {
+    case Texture::Format::jpg: return "jpg";
+    case Texture::Format::png: return "png";
+    case Texture::Format::jpeg2000: return "jp2";
+    }
+    throw;
 }
 
 namespace detail {
@@ -58,6 +76,11 @@ Manifest parse1(const Json::Value &value, const fs::path &basePath)
 
             Json::get(path, jmesh, "path");
             lod.mesh.path = lod.path / path;
+            {
+                std::string tmp;
+                Json::get(tmp, jmesh, "format");
+                lod.mesh.format = boost::lexical_cast<Mesh::Format>(tmp);
+            }
 
             for (const auto &jtexture
                      : Json::check(jlod["atlas"], Json::arrayValue
@@ -71,6 +94,12 @@ Manifest parse1(const Json::Value &value, const fs::path &basePath)
 
                 Json::get(texture.size.width, jtexture, "size", 0);
                 Json::get(texture.size.height, jtexture, "size", 1);
+
+                {
+                    std::string tmp;
+                    Json::get(tmp, jtexture, "format");
+                    texture.format = boost::lexical_cast<Texture::Format>(tmp);
+                }
             }
         }
     }
@@ -156,6 +185,8 @@ void saveManifest(std::ostream &os, const fs::path &path
 
             auto &jmesh(jlod["mesh"] = Json::objectValue);
             jmesh["path"] = lod.mesh.path.filename().string();
+            jmesh["format"]
+                = boost::lexical_cast<std::string>(lod.mesh.format);
 
             auto &atlas(jlod["atlas"] = Json::arrayValue);
             for (const auto &texture : lod.atlas) {
@@ -165,6 +196,9 @@ void saveManifest(std::ostream &os, const fs::path &path
                 auto &size(jtexture["size"] = Json::arrayValue);
                 size.append(texture.size.width);
                 size.append(texture.size.height);
+
+                jtexture["format"]
+                    = boost::lexical_cast<std::string>(texture.format);
             }
         }
     }
@@ -266,7 +300,8 @@ Id VadstenaArchiveWriter::addWindow(const OptionalString &path)
     return index;
 }
 
-Id VadstenaArchiveWriter::addLod(Id windowId, const OptionalString &path)
+Id VadstenaArchiveWriter::addLod(Id windowId, const OptionalString &path
+                                 , Mesh::Format meshFormat)
 {
     if (windowId >= manifest_.windows.size()) {
         LOGTHROW(err1, std::logic_error)
@@ -289,7 +324,11 @@ Id VadstenaArchiveWriter::addLod(Id windowId, const OptionalString &path)
 
     auto &windowLod(window.lods.back());
     create_directories(windowLod.path);
-    windowLod.mesh.path = windowLod.path / constants::MeshName;
+
+    windowLod.mesh.format = meshFormat;
+    windowLod.mesh.path = (windowLod.path /
+                           str(boost::format(constants::MeshNameFormat)
+                               % asExtension(meshFormat)));
 
     return index;
 }
@@ -315,7 +354,8 @@ Mesh& VadstenaArchiveWriter::mesh(Id windowId, Id lod)
     return window.lods[lod].mesh;
 }
 
-Texture VadstenaArchiveWriter::addTexture(Id windowId, Id lod, const Texture &t)
+Texture VadstenaArchiveWriter::addTexture(Id windowId, Id lod, const Texture &t
+                                          , Texture::Format format)
 {
     if (windowId >= manifest_.windows.size()) {
         LOGTHROW(err1, std::logic_error)
@@ -340,8 +380,10 @@ Texture VadstenaArchiveWriter::addTexture(Id windowId, Id lod, const Texture &t)
 
     // set update path and return
     auto &tt(atlas.back());
+    tt.format = format;
     tt.path = (windowLod.path /
-               str(boost::format(constants::TextureNameFormat) % index));
+               str(boost::format(constants::TextureNameFormat)
+                   % index % asExtension(format)));
     return tt;
 }
 
