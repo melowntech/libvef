@@ -56,18 +56,32 @@ struct Manifest {
     LoddedWindow::list windows;
 };
 
-typedef std::size_t Id;
-
+/** Vadstena export format archive reader
+ */
 class VadstenaArchive {
 public:
     VadstenaArchive(const boost::filesystem::path &root);
 
+    const Manifest manifest() const { return manifest_; }
+
+private:
+    boost::filesystem::path root_;
+
+    Manifest manifest_;
+};
+
+typedef std::size_t Id;
+
+/** Vadstena export format archive writer
+ */
+class VadstenaArchiveWriter {
+public:
     /** Creates new vadstena export archive. Creation fails if root directory
      *  already exists and overwrite is false.
      */
-    VadstenaArchive(const boost::filesystem::path &root, bool overwrite);
+    VadstenaArchiveWriter(const boost::filesystem::path &root, bool overwrite);
 
-    ~VadstenaArchive();
+    ~VadstenaArchiveWriter();
 
     /** Adds new lodded window collection.
      */
@@ -92,8 +106,6 @@ public:
     /** Flush pending changes to storage.
      */
     void flush();
-
-    const Manifest manifest() const { return manifest_; }
 
 private:
     boost::filesystem::path root_;

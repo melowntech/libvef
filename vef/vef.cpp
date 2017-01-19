@@ -187,12 +187,13 @@ void saveManifest(const fs::path &path, const Manifest &manifest)
 } // namespace
 
 VadstenaArchive::VadstenaArchive(const boost::filesystem::path &root)
-    : root_(root), changed_(false)
+    : root_(root)
     , manifest_(loadManifest(root / constants::ManifestName))
 {
 }
 
-VadstenaArchive::VadstenaArchive(const fs::path &root, bool overwrite)
+VadstenaArchiveWriter::VadstenaArchiveWriter(const fs::path &root
+                                             , bool overwrite)
     : root_(root), changed_(false)
 {
     if (!create_directories(root_)) {
@@ -205,7 +206,7 @@ VadstenaArchive::VadstenaArchive(const fs::path &root, bool overwrite)
     }
 }
 
-VadstenaArchive::~VadstenaArchive()
+VadstenaArchiveWriter::~VadstenaArchiveWriter()
 {
     if (changed_ && !std::uncaught_exception()) {
         LOG(warn4)
@@ -221,7 +222,7 @@ boost::filesystem::path Mesh::mtlPath() const
     return p;
 }
 
-void VadstenaArchive::flush()
+void VadstenaArchiveWriter::flush()
 {
     if (!changed_) { return; }
 
@@ -250,7 +251,7 @@ void VadstenaArchive::flush()
     changed_ = false;
 }
 
-Id VadstenaArchive::addWindow(const OptionalString &path)
+Id VadstenaArchiveWriter::addWindow(const OptionalString &path)
 {
     changed_ = true;
     auto index(manifest_.windows.size());
@@ -265,7 +266,7 @@ Id VadstenaArchive::addWindow(const OptionalString &path)
     return index;
 }
 
-Id VadstenaArchive::addLod(Id windowId, const OptionalString &path)
+Id VadstenaArchiveWriter::addLod(Id windowId, const OptionalString &path)
 {
     if (windowId >= manifest_.windows.size()) {
         LOGTHROW(err1, std::logic_error)
@@ -293,7 +294,7 @@ Id VadstenaArchive::addLod(Id windowId, const OptionalString &path)
     return index;
 }
 
-Mesh& VadstenaArchive::mesh(Id windowId, Id lod)
+Mesh& VadstenaArchiveWriter::mesh(Id windowId, Id lod)
 {
     if (windowId >= manifest_.windows.size()) {
         LOGTHROW(err1, std::logic_error)
@@ -314,7 +315,7 @@ Mesh& VadstenaArchive::mesh(Id windowId, Id lod)
     return window.lods[lod].mesh;
 }
 
-Texture VadstenaArchive::addTexture(Id windowId, Id lod, const Texture &t)
+Texture VadstenaArchiveWriter::addTexture(Id windowId, Id lod, const Texture &t)
 {
     if (windowId >= manifest_.windows.size()) {
         LOGTHROW(err1, std::logic_error)
@@ -344,7 +345,7 @@ Texture VadstenaArchive::addTexture(Id windowId, Id lod, const Texture &t)
     return tt;
 }
 
-void VadstenaArchive::setSrs(const geo::SrsDefinition &srs)
+void VadstenaArchiveWriter::setSrs(const geo::SrsDefinition &srs)
 {
     manifest_.srs = srs;
     changed_ = true;
