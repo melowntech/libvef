@@ -70,7 +70,7 @@ class VadstenaArchive {
 public:
     VadstenaArchive(const boost::filesystem::path &root);
 
-    const Manifest manifest() const { return manifest_; }
+    const Manifest& manifest() const { return manifest_; }
 
 private:
     boost::filesystem::path root_;

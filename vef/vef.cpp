@@ -220,11 +220,10 @@ void saveManifest(const fs::path &path, const Manifest &manifest)
 
 } // namespace
 
-VadstenaArchive::VadstenaArchive(const boost::filesystem::path &root)
+VadstenaArchive::VadstenaArchive(const fs::path &root)
     : root_(root)
     , manifest_(loadManifest(root / constants::ManifestName))
-{
-}
+{}
 
 VadstenaArchiveWriter::VadstenaArchiveWriter(const fs::path &root
                                              , bool overwrite)
@@ -249,7 +248,7 @@ VadstenaArchiveWriter::~VadstenaArchiveWriter()
     }
 }
 
-boost::filesystem::path Mesh::mtlPath() const
+fs::path Mesh::mtlPath() const
 {
     auto p(path);
     p.replace_extension(".mtl");
