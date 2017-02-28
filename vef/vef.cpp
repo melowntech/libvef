@@ -6,6 +6,11 @@
 
 #include "dbglog/dbglog.hpp"
 
+#include "utility/streams.hpp"
+#include "utility/magic.hpp"
+#include "utility/substream.hpp"
+#include "utility/tar.hpp"
+
 #include "jsoncpp/json.hpp"
 #include "jsoncpp/as.hpp"
 
@@ -109,8 +114,11 @@ Manifest parse1(const Json::Value &value, const fs::path &basePath)
 
 } // namespace detail
 
-Manifest loadManifest(std::istream &in, const fs::path &path)
+Manifest loadManifest(std::istream &in, const fs::path &path
+                      , bool useLocalPaths)
 {
+    LOG(info1) << "Loading manifest from " << path  << ".";
+
     // load json
     Json::Value manifest;
     Json::Reader reader;
@@ -120,13 +128,17 @@ Manifest loadManifest(std::istream &in, const fs::path &path)
             << reader.getFormattedErrorMessages() << ".";
     }
 
+    const auto basePath(useLocalPaths
+                        ? ""
+                        : path.parent_path());
+
     try {
         int version(0);
         Json::get(version, manifest, "version");
 
         switch (version) {
         case 1:
-            return detail::parse1(manifest, path.parent_path());
+            return detail::parse1(manifest, basePath);
         }
 
         LOGTHROW(err1, std::runtime_error)
@@ -141,7 +153,7 @@ Manifest loadManifest(std::istream &in, const fs::path &path)
     throw;
 }
 
-Manifest loadManifest(const fs::path &path)
+Manifest loadManifest(const fs::path &path, bool useLocalPaths)
 {
     LOG(info1) << "Loading manifest from " << path  << ".";
     std::ifstream f;
@@ -153,7 +165,7 @@ Manifest loadManifest(const fs::path &path)
         LOGTHROW(err1, std::runtime_error)
             << "Unable to load manifest file " << path << ".";
     }
-    auto mf(loadManifest(f, path));
+    auto mf(loadManifest(f, path, useLocalPaths));
     f.close();
     return mf;
 }
@@ -218,12 +230,140 @@ void saveManifest(const fs::path &path, const Manifest &manifest)
     f.close();
 }
 
+class FileIStream : public IStream {
+public:
+    FileIStream(const fs::path &path)
+        : path_(path)
+        , stream_(path.string())
+    {}
+
+    virtual boost::filesystem::path path() const { return path_; }
+    virtual std::istream& get() { return stream_; }
+    virtual void close() { stream_.close(); }
+
+private:
+    const fs::path path_;
+    utility::ifstreambuf stream_;
+};
+
+utility::io::SubStreamDevice::Filedes
+convert(const utility::tar::Reader::Filedes &fd)
+{
+    return { fd.fd, fd.start, fd.end };
+}
+
+class TarIStream : public IStream {
+public:
+    TarIStream(const fs::path &path
+               , const utility::tar::Reader::Filedes &fd)
+        : path_(path)
+        , buffer_(path, convert(fd)), stream_(&buffer_)
+    {
+        stream_.exceptions(std::ios::badbit | std::ios::failbit);
+        buf_.reset(new char[1 << 16]);
+        buffer_.pubsetbuf(buf_.get(), 1 << 16);
+    }
+
+    virtual std::istream& get() { return stream_; }
+    virtual fs::path path() const { return path_; }
+    virtual void close() {}
+
+private:
+    fs::path path_;
+
+    std::unique_ptr<char[]> buf_;
+    boost::iostreams::stream_buffer<utility::io::SubStreamDevice> buffer_;
+    std::istream stream_;
+};
+
 } // namespace
+
+struct VadstenaArchive::Detail {
+    typedef std::shared_ptr<Detail> pointer;
+
+    Detail(const fs::path &root)
+        : root(root), reader(root)
+        , index(reader.index())
+    {}
+
+    IStream::pointer istream(const fs::path &path) const;
+
+    static pointer build(const fs::path &root);
+
+    static bool localPath(const Detail::pointer &detail) {
+        return detail.operator bool();
+    }
+
+    static bool directAccess(const Detail::pointer &detail) {
+        return !detail.operator bool();
+    }
+
+    static IStream::pointer manifestStream(const fs::path &root
+                                           , const Detail::pointer &detail);
+    const fs::path root;
+
+    utility::tar::Reader reader;
+    utility::tar::Reader::Index index;
+};
+
+IStream::pointer VadstenaArchive::Detail::istream(const fs::path &path) const
+{
+    return std::make_shared<TarIStream>(path, index.file(path.string()));
+}
+
+IStream::pointer
+VadstenaArchive::Detail::manifestStream(const fs::path &root
+                                        , const Detail::pointer &detail)
+{
+    if (detail) { return detail->istream(constants::ManifestName); }
+
+    const auto path(root / constants::ManifestName);
+    try {
+        return std::make_shared<FileIStream>(path);
+    } catch (const std::exception &e) {
+        LOGTHROW(err1, std::runtime_error)
+            << "Unable to open file " << path << ".";
+    }
+    return {};
+}
+
+VadstenaArchive::Detail::pointer
+VadstenaArchive::Detail::build(const fs::path &root)
+{
+    if (utility::Magic().mime(root) != "application/x-tar") {
+        // not a tar, expect directory
+        return {};
+    }
+
+    return std::make_shared<Detail>(root);
+}
 
 VadstenaArchive::VadstenaArchive(const fs::path &root)
     : root_(root)
-    , manifest_(loadManifest(root / constants::ManifestName))
+    , detail_(Detail::build(root))
+    , manifest_(loadManifest(*Detail::manifestStream(root, detail_)
+                             , root / constants::ManifestName
+                             , Detail::localPath(detail_)))
 {}
+
+IStream::pointer VadstenaArchive::istream(const fs::path &path) const
+{
+    if (detail_) { return detail_->istream(path); }
+
+    // raw filesystem access
+    try {
+        return std::make_shared<FileIStream>(path);
+    } catch (const std::exception &e) {
+        LOGTHROW(err1, std::runtime_error)
+            << "Unable to open file " << path << ".";
+    }
+    return {};
+}
+
+bool VadstenaArchive::directAccess() const
+{
+    return Detail::directAccess(detail_);
+}
 
 VadstenaArchiveWriter::VadstenaArchiveWriter(const fs::path &root
                                              , bool overwrite)
