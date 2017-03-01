@@ -1,3 +1,4 @@
+#include <map>
 #include <fstream>
 
 #include <boost/format.hpp>
@@ -10,6 +11,7 @@
 #include "utility/magic.hpp"
 #include "utility/substream.hpp"
 #include "utility/tar.hpp"
+#include "utility/path.hpp"
 
 #include "jsoncpp/json.hpp"
 #include "jsoncpp/as.hpp"
@@ -246,18 +248,13 @@ private:
     utility::ifstreambuf stream_;
 };
 
-utility::io::SubStreamDevice::Filedes
-convert(const utility::tar::Reader::Filedes &fd)
-{
-    return { fd.fd, fd.start, fd.end };
-}
-
 class TarIStream : public IStream {
 public:
-    TarIStream(const fs::path &path
-               , const utility::tar::Reader::Filedes &fd)
+    typedef utility::io::SubStreamDevice::Filedes Filedes;
+
+    TarIStream(const fs::path &path, const Filedes &fd)
         : path_(path)
-        , buffer_(path, convert(fd)), stream_(&buffer_)
+        , buffer_(path, fd), stream_(&buffer_)
     {
         stream_.exceptions(std::ios::badbit | std::ios::failbit);
         buf_.reset(new char[1 << 16]);
@@ -276,14 +273,65 @@ private:
     std::istream stream_;
 };
 
+boost::filesystem::path
+findPrefix(const fs::path &path
+           , const utility::tar::Reader::File::list &files)
+{
+    for (const auto &file : files) {
+        if (file.path.filename() == constants::ManifestName) {
+            return file.path.parent_path();
+        }
+    }
+
+    LOGTHROW(err2, std::runtime_error)
+        << "No manifest found in the archive at " << path << ".";
+    throw;
+}
+
+class TarIndex {
+public:
+    typedef utility::io::SubStreamDevice::Filedes Filedes;
+
+    TarIndex(utility::tar::Reader &reader)
+        : path_(reader.path())
+    {
+        const auto files(reader.files());
+        const auto prefix(findPrefix(path_, files));
+        const auto fd(reader.filedes());
+
+        for (const auto &file : files) {
+            if (!utility::isPathPrefix(file.path, prefix)) { continue; }
+
+            const auto path(utility::cutPathPrefix(file.path, prefix));
+            index_.insert(map::value_type
+                              (path.string()
+                               , { fd, file.start, file.end() }));
+        }
+    }
+
+    const Filedes& file(const std::string &path) const {
+        auto findex(index_.find(path));
+        if (findex == index_.end()) {
+            LOGTHROW(err2, std::runtime_error)
+                << "File \"" << path << "\" not found in the archive at "
+                << path_ << ".";
+        }
+        return findex->second;
+    }
+
+private:
+    const fs::path path_;
+    typedef std::map<std::string, Filedes> map;
+    map index_;
+};
+
 } // namespace
 
 struct VadstenaArchive::Detail {
     typedef std::shared_ptr<Detail> pointer;
 
     Detail(const fs::path &root)
-        : root(root), reader(root)
-        , index(reader.index())
+        : root(root), reader(root), index(reader)
     {}
 
     IStream::pointer istream(const fs::path &path) const;
@@ -303,7 +351,7 @@ struct VadstenaArchive::Detail {
     const fs::path root;
 
     utility::tar::Reader reader;
-    utility::tar::Reader::Index index;
+    TarIndex index;
 };
 
 IStream::pointer VadstenaArchive::Detail::istream(const fs::path &path) const
