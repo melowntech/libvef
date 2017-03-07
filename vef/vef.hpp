@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <map>
+#include <memory>
 
 #include <boost/optional.hpp>
 #include <boost/filesystem/path.hpp>
@@ -64,17 +65,48 @@ struct Manifest {
     LoddedWindow::list windows;
 };
 
+class IStream {
+public:
+    typedef std::shared_ptr<IStream> pointer;
+    virtual ~IStream() {}
+    virtual boost::filesystem::path path() const = 0;
+    virtual std::istream& get() = 0;
+    virtual void close() = 0;
+
+    operator std::istream&() { return get(); }
+};
+
 /** Vadstena export format archive reader
  */
 class VadstenaArchive {
 public:
     VadstenaArchive(const boost::filesystem::path &root);
 
-    const Manifest manifest() const { return manifest_; }
+    const Manifest& manifest() const { return manifest_; }
+
+    /** Returns pointer to input stream.
+     *
+     *  Path must be path from manifest if this archive is stored in a tarball.
+     */
+    IStream::pointer istream(const boost::filesystem::path &path) const;
+
+    /** Is access to files direct? If true, files returned in manifest are
+     *  directly accessible on the filesystem and thus access can be optimized.
+     */
+    bool directAccess() const;
 
 private:
+    /** Path to an archive (directory or tarball)
+     */
     boost::filesystem::path root_;
 
+    /** Implementation dependant stuff.
+     */
+    class Detail;
+    std::shared_ptr<Detail> detail_;
+
+    /** Loaded manifest.
+     */
     Manifest manifest_;
 };
 
