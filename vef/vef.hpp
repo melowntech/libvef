@@ -1,5 +1,5 @@
-#ifndef vadstena_libs_ve_hpp_included_
-#define vadstena_libs_ve_hpp_included_
+#ifndef vef_vef_hpp_included_
+#define vef_vef_hpp_included_
 
 #include <vector>
 #include <map>
@@ -12,8 +12,9 @@
 
 #include "math/geometry_core.hpp"
 #include "geo/srsdef.hpp"
+#include "roarchive/roarchive.hpp"
 
-namespace vadstena { namespace vef {
+namespace vef {
 
 typedef boost::optional<std::string> OptionalString;
 
@@ -65,45 +66,18 @@ struct Manifest {
     LoddedWindow::list windows;
 };
 
-class IStream {
-public:
-    typedef std::shared_ptr<IStream> pointer;
-    virtual ~IStream() {}
-    virtual boost::filesystem::path path() const = 0;
-    virtual std::istream& get() = 0;
-    virtual void close() = 0;
-
-    operator std::istream&() { return get(); }
-};
-
-/** Vadstena export format archive reader
+/** VEF archive reader
  */
-class VadstenaArchive {
+class Archive {
 public:
-    VadstenaArchive(const boost::filesystem::path &root);
+    Archive(const boost::filesystem::path &root);
 
     const Manifest& manifest() const { return manifest_; }
 
-    /** Returns pointer to input stream.
-     *
-     *  Path must be path from manifest if this archive is stored in a tarball.
-     */
-    IStream::pointer istream(const boost::filesystem::path &path) const;
-
-    /** Is access to files direct? If true, files returned in manifest are
-     *  directly accessible on the filesystem and thus access can be optimized.
-     */
-    bool directAccess() const;
+    const roarchive::RoArchive archive() const { return archive_; }
 
 private:
-    /** Path to an archive (directory or tarball)
-     */
-    boost::filesystem::path root_;
-
-    /** Implementation dependant stuff.
-     */
-    class Detail;
-    std::shared_ptr<Detail> detail_;
+    roarchive::RoArchive archive_;
 
     /** Loaded manifest.
      */
@@ -112,16 +86,16 @@ private:
 
 typedef std::size_t Id;
 
-/** Vadstena export format archive writer
+/** VEF archive writer
  */
-class VadstenaArchiveWriter {
+class ArchiveWriter {
 public:
-    /** Creates new vadstena export archive. Creation fails if root directory
+    /** Creates new VEF archive. Creation fails if root directory
      *  already exists and overwrite is false.
      */
-    VadstenaArchiveWriter(const boost::filesystem::path &root, bool overwrite);
+    ArchiveWriter(const boost::filesystem::path &root, bool overwrite);
 
-    ~VadstenaArchiveWriter();
+    ~ArchiveWriter();
 
     /** Adds new lodded window collection.
      */
@@ -178,6 +152,6 @@ UTILITY_GENERATE_ENUM_IO(Mesh::Format,
     ((gzippedObj)("obj.gz"))
 )
 
-} } // namespace vadstena::vef
+} // namespace vef
 
-#endif // vadstena_libs_ve_hpp_included_
+#endif // vef_vef_hpp_included_

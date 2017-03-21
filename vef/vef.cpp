@@ -20,7 +20,7 @@
 
 namespace fs = boost::filesystem;
 
-namespace vadstena { namespace vef {
+namespace vef {
 
 namespace {
 
@@ -156,6 +156,12 @@ Manifest loadManifest(std::istream &in, const fs::path &path
     throw;
 }
 
+Manifest loadManifest(const roarchive::IStream::pointer &in
+                      , bool useLocalPaths)
+{
+    return loadManifest(in->get(), in->path(), useLocalPaths);
+}
+
 Manifest loadManifest(const fs::path &path, bool useLocalPaths)
 {
     LOG(info1) << "Loading manifest from " << path  << ".";
@@ -233,188 +239,15 @@ void saveManifest(const fs::path &path, const Manifest &manifest)
     f.close();
 }
 
-class FileIStream : public IStream {
-public:
-    FileIStream(const fs::path &path)
-        : path_(path)
-        , stream_(path.string())
-    {}
-
-    virtual boost::filesystem::path path() const { return path_; }
-    virtual std::istream& get() { return stream_; }
-    virtual void close() { stream_.close(); }
-
-private:
-    const fs::path path_;
-    utility::ifstreambuf stream_;
-};
-
-class TarIStream : public IStream {
-public:
-    typedef utility::io::SubStreamDevice::Filedes Filedes;
-
-    TarIStream(const fs::path &path, const Filedes &fd)
-        : path_(path)
-        , buffer_(path, fd), stream_(&buffer_)
-    {
-        stream_.exceptions(std::ios::badbit | std::ios::failbit);
-        buf_.reset(new char[1 << 16]);
-        buffer_.pubsetbuf(buf_.get(), 1 << 16);
-    }
-
-    virtual std::istream& get() { return stream_; }
-    virtual fs::path path() const { return path_; }
-    virtual void close() {}
-
-private:
-    fs::path path_;
-
-    std::unique_ptr<char[]> buf_;
-    boost::iostreams::stream_buffer<utility::io::SubStreamDevice> buffer_;
-    std::istream stream_;
-};
-
-boost::filesystem::path
-findPrefix(const fs::path &path
-           , const utility::tar::Reader::File::list &files)
-{
-    for (const auto &file : files) {
-        if (file.path.filename() == constants::ManifestName) {
-            return file.path.parent_path();
-        }
-    }
-
-    LOGTHROW(err2, std::runtime_error)
-        << "No manifest found in the archive at " << path << ".";
-    throw;
-}
-
-class TarIndex {
-public:
-    typedef utility::io::SubStreamDevice::Filedes Filedes;
-
-    TarIndex(utility::tar::Reader &reader)
-        : path_(reader.path())
-    {
-        const auto files(reader.files());
-        const auto prefix(findPrefix(path_, files));
-        const auto fd(reader.filedes());
-
-        for (const auto &file : files) {
-            if (!utility::isPathPrefix(file.path, prefix)) { continue; }
-
-            const auto path(utility::cutPathPrefix(file.path, prefix));
-            index_.insert(map::value_type
-                              (path.string()
-                               , { fd, file.start, file.end() }));
-        }
-    }
-
-    const Filedes& file(const std::string &path) const {
-        auto findex(index_.find(path));
-        if (findex == index_.end()) {
-            LOGTHROW(err2, std::runtime_error)
-                << "File \"" << path << "\" not found in the archive at "
-                << path_ << ".";
-        }
-        return findex->second;
-    }
-
-private:
-    const fs::path path_;
-    typedef std::map<std::string, Filedes> map;
-    map index_;
-};
-
 } // namespace
 
-struct VadstenaArchive::Detail {
-    typedef std::shared_ptr<Detail> pointer;
-
-    Detail(const fs::path &root)
-        : root(root), reader(root), index(reader)
-    {}
-
-    IStream::pointer istream(const fs::path &path) const;
-
-    static pointer build(const fs::path &root);
-
-    static bool localPath(const Detail::pointer &detail) {
-        return detail.operator bool();
-    }
-
-    static bool directAccess(const Detail::pointer &detail) {
-        return !detail.operator bool();
-    }
-
-    static IStream::pointer manifestStream(const fs::path &root
-                                           , const Detail::pointer &detail);
-    const fs::path root;
-
-    utility::tar::Reader reader;
-    TarIndex index;
-};
-
-IStream::pointer VadstenaArchive::Detail::istream(const fs::path &path) const
-{
-    return std::make_shared<TarIStream>(path, index.file(path.string()));
-}
-
-IStream::pointer
-VadstenaArchive::Detail::manifestStream(const fs::path &root
-                                        , const Detail::pointer &detail)
-{
-    if (detail) { return detail->istream(constants::ManifestName); }
-
-    const auto path(root / constants::ManifestName);
-    try {
-        return std::make_shared<FileIStream>(path);
-    } catch (const std::exception &e) {
-        LOGTHROW(err1, std::runtime_error)
-            << "Unable to open file " << path << ".";
-    }
-    return {};
-}
-
-VadstenaArchive::Detail::pointer
-VadstenaArchive::Detail::build(const fs::path &root)
-{
-    if (utility::Magic().mime(root) != "application/x-tar") {
-        // not a tar, expect directory
-        return {};
-    }
-
-    return std::make_shared<Detail>(root);
-}
-
-VadstenaArchive::VadstenaArchive(const fs::path &root)
-    : root_(root)
-    , detail_(Detail::build(root))
-    , manifest_(loadManifest(*Detail::manifestStream(root, detail_)
-                             , root / constants::ManifestName
-                             , Detail::localPath(detail_)))
+Archive::Archive(const fs::path &root)
+    : archive_(root, constants::ManifestName)
+    , manifest_(loadManifest(archive_.istream(constants::ManifestName)
+                             , archive_.directio()))
 {}
 
-IStream::pointer VadstenaArchive::istream(const fs::path &path) const
-{
-    if (detail_) { return detail_->istream(path); }
-
-    // raw filesystem access
-    try {
-        return std::make_shared<FileIStream>(path);
-    } catch (const std::exception &e) {
-        LOGTHROW(err1, std::runtime_error)
-            << "Unable to open file " << path << ".";
-    }
-    return {};
-}
-
-bool VadstenaArchive::directAccess() const
-{
-    return Detail::directAccess(detail_);
-}
-
-VadstenaArchiveWriter::VadstenaArchiveWriter(const fs::path &root
+ArchiveWriter::ArchiveWriter(const fs::path &root
                                              , bool overwrite)
     : root_(root), changed_(false)
 {
@@ -422,17 +255,16 @@ VadstenaArchiveWriter::VadstenaArchiveWriter(const fs::path &root
         // directory already exists -> fail if mode says so
         if (!overwrite) {
             LOGTHROW(err2, std::runtime_error)
-                << "Vadstena export archive at " << root_
-                << " already exists.";
+                << "VEF archive at " << root_  << " already exists.";
         }
     }
 }
 
-VadstenaArchiveWriter::~VadstenaArchiveWriter()
+ArchiveWriter::~ArchiveWriter()
 {
     if (changed_ && !std::uncaught_exception()) {
         LOG(warn4)
-            << "Unflushed vadstena archive at " << root_
+            << "Unflushed VEF archive at " << root_
             << "; all changes made will not be reflected in the storage.";
     }
 }
@@ -442,7 +274,7 @@ fs::path Mesh::mtlPath() const
     return path.parent_path() / constants::MtlFileName;
 }
 
-void VadstenaArchiveWriter::flush()
+void ArchiveWriter::flush()
 {
     if (!changed_) { return; }
 
@@ -471,7 +303,7 @@ void VadstenaArchiveWriter::flush()
     changed_ = false;
 }
 
-Id VadstenaArchiveWriter::addWindow(const OptionalString &path)
+Id ArchiveWriter::addWindow(const OptionalString &path)
 {
     changed_ = true;
     auto index(manifest_.windows.size());
@@ -486,7 +318,7 @@ Id VadstenaArchiveWriter::addWindow(const OptionalString &path)
     return index;
 }
 
-Id VadstenaArchiveWriter::addLod(Id windowId, const OptionalString &path
+Id ArchiveWriter::addLod(Id windowId, const OptionalString &path
                                  , Mesh::Format meshFormat)
 {
     if (windowId >= manifest_.windows.size()) {
@@ -519,7 +351,7 @@ Id VadstenaArchiveWriter::addLod(Id windowId, const OptionalString &path
     return index;
 }
 
-Mesh& VadstenaArchiveWriter::mesh(Id windowId, Id lod)
+Mesh& ArchiveWriter::mesh(Id windowId, Id lod)
 {
     if (windowId >= manifest_.windows.size()) {
         LOGTHROW(err1, std::logic_error)
@@ -540,7 +372,7 @@ Mesh& VadstenaArchiveWriter::mesh(Id windowId, Id lod)
     return window.lods[lod].mesh;
 }
 
-Texture VadstenaArchiveWriter::addTexture(Id windowId, Id lod, const Texture &t
+Texture ArchiveWriter::addTexture(Id windowId, Id lod, const Texture &t
                                           , Texture::Format format)
 {
     if (windowId >= manifest_.windows.size()) {
@@ -573,10 +405,10 @@ Texture VadstenaArchiveWriter::addTexture(Id windowId, Id lod, const Texture &t
     return tt;
 }
 
-void VadstenaArchiveWriter::setSrs(const geo::SrsDefinition &srs)
+void ArchiveWriter::setSrs(const geo::SrsDefinition &srs)
 {
     manifest_.srs = srs;
     changed_ = true;
 }
 
-} } // namespace vadstena::vef
+} // namespace vef
