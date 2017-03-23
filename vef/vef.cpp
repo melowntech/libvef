@@ -243,8 +243,7 @@ void saveManifest(const fs::path &path, const Manifest &manifest)
 
 Archive::Archive(const fs::path &root)
     : archive_(root, constants::ManifestName)
-    , manifest_(loadManifest(archive_.istream(constants::ManifestName)
-                             , archive_.directio()))
+    , manifest_(loadManifest(archive_.istream(constants::ManifestName), true))
 {}
 
 ArchiveWriter::ArchiveWriter(const fs::path &root
