@@ -12,7 +12,6 @@
 
 #include "math/geometry_core.hpp"
 #include "geo/srsdef.hpp"
-#include "roarchive/roarchive.hpp"
 
 namespace vef {
 
@@ -64,24 +63,6 @@ struct Manifest {
     boost::optional<geo::SrsDefinition> srs;
 
     LoddedWindow::list windows;
-};
-
-/** VEF archive reader
- */
-class Archive {
-public:
-    Archive(const boost::filesystem::path &root);
-
-    const Manifest& manifest() const { return manifest_; }
-
-    const roarchive::RoArchive archive() const { return archive_; }
-
-private:
-    roarchive::RoArchive archive_;
-
-    /** Loaded manifest.
-     */
-    Manifest manifest_;
 };
 
 typedef std::size_t Id;
