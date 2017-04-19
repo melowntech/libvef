@@ -4,12 +4,12 @@ set(vef_VERSION 1.2)
 set(vef_EXTRA_DEPENDS)
 set(vef_EXTRA_SOURCES)
 
-if(module_roarchive_FOUND)
-  message(STATUS "utility: compiling in roarchive support")
+if(MODULE_roarchive_FOUND)
+  message(STATUS "vef: compiling in roarchive support")
   list(APPEND vef_EXTRA_DEPENDS roarchive)
   list(APPEND vef_EXTRA_SOURCES reader.hpp reader.cpp)
 else()
-  message(STATUS "utility: compiling without roarchive support")
+  message(STATUS "vef: compiling without roarchive support")
 endif()
 
 define_module(LIBRARY vef=${vef_VERSION}
