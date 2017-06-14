@@ -181,22 +181,12 @@ Manifest loadManifest(const fs::path &path, bool useLocalPaths)
 } // namespace
 
 Archive::Archive(const fs::path &root)
-    : ownArchive_(boost::in_place(root, constants::ManifestName))
-    , archive_(*ownArchive_)
+    : archive_(root, constants::ManifestName)
     , manifest_(loadManifest(archive_.istream(constants::ManifestName), true))
 {}
 
-namespace {
-roarchive::RoArchive& updateArchive(roarchive::RoArchive &archive)
-{
-    archive.applyHint(constants::ManifestName);
-    return archive;
-}
-
-} // namesapce
-
 Archive::Archive(roarchive::RoArchive &archive)
-    : archive_(updateArchive(archive))
+    : archive_(archive.applyHint(constants::ManifestName))
     , manifest_(loadManifest(archive_.istream(constants::ManifestName), true))
 {}
 

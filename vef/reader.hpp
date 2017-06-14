@@ -47,9 +47,7 @@ public:
     const roarchive::RoArchive archive() const { return archive_; }
 
 private:
-    boost::optional<roarchive::RoArchive> ownArchive_;
-
-    roarchive::RoArchive &archive_;
+    roarchive::RoArchive archive_;
 
     /** Loaded manifest.
      */
