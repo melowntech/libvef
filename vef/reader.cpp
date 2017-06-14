@@ -28,6 +28,7 @@
 
 #include <boost/filesystem.hpp>
 #include <boost/lexical_cast.hpp>
+#include <boost/utility/in_place_factory.hpp>
 
 #include "dbglog/dbglog.hpp"
 
@@ -180,7 +181,22 @@ Manifest loadManifest(const fs::path &path, bool useLocalPaths)
 } // namespace
 
 Archive::Archive(const fs::path &root)
-    : archive_(root, constants::ManifestName)
+    : ownArchive_(boost::in_place(root, constants::ManifestName))
+    , archive_(*ownArchive_)
+    , manifest_(loadManifest(archive_.istream(constants::ManifestName), true))
+{}
+
+namespace {
+roarchive::RoArchive& updateArchive(roarchive::RoArchive &archive)
+{
+    archive.applyHint(constants::ManifestName);
+    return archive;
+}
+
+} // namesapce
+
+Archive::Archive(roarchive::RoArchive &archive)
+    : archive_(updateArchive(archive))
     , manifest_(loadManifest(archive_.istream(constants::ManifestName), true))
 {}
 

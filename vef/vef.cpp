@@ -47,7 +47,7 @@ namespace vef {
 namespace {
 
 namespace constants {
-std::string ManifestName("manifest.json");
+std::string ManifestName(MainFile);
 std::string MeshNameFormat("mesh.%s");
 std::string MtlFileName("mesh.mtl");
 std::string TextureNameFormat("texture-%d.%s");

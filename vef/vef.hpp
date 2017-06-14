@@ -40,6 +40,8 @@
 
 namespace vef {
 
+const std::string MainFile("manifest.json");
+
 typedef boost::optional<std::string> OptionalString;
 
 struct Texture {

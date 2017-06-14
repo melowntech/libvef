@@ -26,6 +26,8 @@
 #ifndef vef_reader_hpp_included_
 #define vef_reader_hpp_included_
 
+#include <boost/optional.hpp>
+
 #include "roarchive/roarchive.hpp"
 
 #include "./vef.hpp"
@@ -38,12 +40,16 @@ class Archive {
 public:
     Archive(const boost::filesystem::path &root);
 
+    Archive(roarchive::RoArchive &archive);
+
     const Manifest& manifest() const { return manifest_; }
 
     const roarchive::RoArchive archive() const { return archive_; }
 
 private:
-    roarchive::RoArchive archive_;
+    boost::optional<roarchive::RoArchive> ownArchive_;
+
+    roarchive::RoArchive &archive_;
 
     /** Loaded manifest.
      */
