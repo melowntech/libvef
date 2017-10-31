@@ -29,6 +29,8 @@
 #include <boost/filesystem.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/utility/in_place_factory.hpp>
+#include <boost/iostreams/filtering_stream.hpp>
+#include <boost/iostreams/filter/gzip.hpp>
 
 #include "dbglog/dbglog.hpp"
 
@@ -40,6 +42,7 @@
 #include "./reader.hpp"
 
 namespace fs = boost::filesystem;
+namespace bio = boost::iostreams;
 
 namespace vef {
 
@@ -189,5 +192,29 @@ Archive::Archive(roarchive::RoArchive &archive)
     : archive_(archive.applyHint(constants::ManifestName))
     , manifest_(loadManifest(archive_.istream(constants::ManifestName), true))
 {}
+
+roarchive::IStream::pointer Archive::meshIStream(const Mesh &mesh) const
+{
+    switch (mesh.format) {
+    case Mesh::Format::obj:
+        // raw data
+        return archive_.istream(mesh.path);
+
+    case Mesh::Format::gzippedObj:
+        // we have to ungzip data
+        return archive_.istream
+            (mesh.path, [](bio::filtering_istream &fis) {
+                // use raw zlib decompressor, tell zlib to autodetect gzip
+                // header
+                bio::zlib_params p;
+                p.window_bits |= 16;
+                fis.push(bio::zlib_decompressor(p));
+            });
+    }
+    LOGTHROW(err2, std::runtime_error)
+        << "Invalid value of Mesh::Format enum: <"
+        << static_cast<int>(mesh.format) << ">.";
+    throw;
+}
 
 } // namespace vef

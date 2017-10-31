@@ -15,8 +15,7 @@ endif()
 define_module(LIBRARY vef=${vef_VERSION}
   DEPENDS ${vef_EXTRA_DEPENDS} geo>=1.24 math>=1.2 utility>=1.11 dbglog>=1.4
   jsoncpp>=1.1
-  MAGIC # needed by tar
-  Boost_FILESYSTEM
+  Boost_FILESYSTEM Boost_IOSTREAMS
   )
 
 set(vef_SOURCES

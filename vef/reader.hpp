@@ -46,6 +46,10 @@ public:
 
     const roarchive::RoArchive archive() const { return archive_; }
 
+    /** Get istream for mesh
+     */
+    roarchive::IStream::pointer meshIStream(const Mesh &mesh) const;
+
 private:
     roarchive::RoArchive archive_;
 
