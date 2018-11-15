@@ -128,7 +128,11 @@ MeshInfo measureMesh(const Archive &archive, const Mesh &mesh
 
     class MeshMeasurer : public geometry::ObjParserBase {
     public:
-        MeshMeasurer(const geo::CsConvertor &conv) : conv_(conv) {}
+        MeshMeasurer(const geo::CsConvertor &conv)
+            : conv_(conv)
+        {
+            useMaterial(0);
+        }
 
         virtual void addVertex(const Vector3d &v) {
             vertices_.push_back(conv_(math::Point3(v.x, v.y, v.z)));
@@ -140,9 +144,9 @@ MeshInfo measureMesh(const Archive &archive, const Mesh &mesh
 
         virtual void addFacet(const Facet &f) {
             auto &sm(submeshes_[textureId_]);
-            sm.mesh = triangleArea
+            sm.mesh += triangleArea
                 (vertices_[f.v[0]], vertices_[f.v[1]], vertices_[f.v[2]]);
-            sm.texture = triangleArea(tc_[f.t[0]], tc_[f.t[1]], tc_[f.t[2]]);
+            sm.texture += triangleArea(tc_[f.t[0]], tc_[f.t[1]], tc_[f.t[2]]);
         }
 
         virtual void useMaterial(const std::string &m) {
@@ -165,7 +169,7 @@ MeshInfo measureMesh(const Archive &archive, const Mesh &mesh
             }
 
             for (const auto &v : vertices_) {
-                math::update(mi.extents, v);
+                math::update(mi.extents, v(0), v(1));
             }
             return mi;
         }
@@ -332,7 +336,8 @@ Tiling::Tiling(const Archive &archive, const math::Size2 &optimalTextureSize)
         << ", empty lods: " << headLods
         << ", extents: " << workExtents
         << "; calculated from pixel size: " << pxSize
-        << " and VEF archive depth: " << depth
+        << ", VEF archive depth: " << depth
+        << ", and mesh extents: " << mp.extents
         << ".";
 }
 
