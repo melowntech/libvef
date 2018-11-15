@@ -12,6 +12,14 @@ else()
   message(STATUS "vef: compiling without roarchive support")
 endif()
 
+if(MODULE_roarchive_FOUND AND MODULE_geometry_FOUND)
+  message(STATUS "vef: compiling in geometry support")
+  list(APPEND vef_EXTRA_DEPENDS geometry)
+  list(APPEND vef_EXTRA_SOURCES tiling.hpp tiling.cpp)
+else()
+  message(STATUS "vef: compiling without geometry support")
+endif()
+
 define_module(LIBRARY vef=${vef_VERSION}
   DEPENDS ${vef_EXTRA_DEPENDS} geo>=1.24 math>=1.2 utility>=1.11 dbglog>=1.4
   jsoncpp>=1.1
