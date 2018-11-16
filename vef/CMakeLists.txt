@@ -20,6 +20,14 @@ else()
   message(STATUS "vef: compiling without geometry support")
 endif()
 
+if(MODULE_roarchive_FOUND AND MODULE_vts-libs-tools-support_FOUND)
+  message(STATUS "vef: compiling in VTS tools support")
+  list(APPEND vef_EXTRA_DEPENDS vts-libs-tools-support)
+  list(APPEND vef_EXTRA_SOURCES tilecutter.hpp tilecutter.cpp)
+else()
+  message(STATUS "vef: compiling without VTS tools support")
+endif()
+
 define_module(LIBRARY vef=${vef_VERSION}
   DEPENDS ${vef_EXTRA_DEPENDS} geo>=1.24 math>=1.2 utility>=1.11 dbglog>=1.4
   jsoncpp>=1.1
