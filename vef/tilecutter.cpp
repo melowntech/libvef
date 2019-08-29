@@ -24,6 +24,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <atomic>
+
 #include <opencv2/highgui/highgui.hpp>
 
 #include "utility/openmp.hpp"
@@ -80,6 +82,30 @@ inline void warpInPlace(vts::Mesh &mesh, const geo::CsConvertor &conv)
     for (auto &sm : mesh) { warpInPlace(sm, conv); }
 }
 
+struct Done {
+    Done(std::size_t count, std::size_t total)
+        : count(count), total(total)
+    {}
+
+    std::size_t count;
+    std::size_t total;
+};
+
+template<typename CharT, typename Traits>
+inline std::basic_ostream<CharT, Traits>&
+operator<<(std::basic_ostream<CharT, Traits> &os, const Done &d)
+{
+    if (d.total) {
+        double percentage((100.0 * d.count) / d.total);
+        boost::io::ios_precision_saver ps(os);
+        return os << '#' << d.count << " of " << d.total << " ("
+                  << std::fixed << std::setprecision(2)
+                  << std::setw(6) << percentage
+                  << " % done)";
+    }
+    return os << '#' << d.count;
+}
+
 class Cutter {
 public:
     Cutter(tools::TmpTileset &ts, const vef::Archive &archive
@@ -91,6 +117,7 @@ public:
         , vef2world_(vef2world)
         , clipMargin_(clipMargin)
         , windows_(windowRecordList(archive_, maxLod))
+        , generated_(), total_(windows_.size())
     {}
 
     void operator()(/**vt::ExternalProgress &progress*/);
@@ -113,11 +140,13 @@ private:
     const geo::CsConvertor &vef2world_;
     const  double clipMargin_;
     WindowRecord::list windows_;
+    std::atomic<std::size_t> generated_;
+    std::size_t total_;
 };
 
 void Cutter::operator()(/**vt::ExternalProgress &progress*/)
 {
-    UTILITY_OMP(parallel for)
+    UTILITY_OMP(parallel for schedule(dynamic, 1))
         for (std::size_t i = 0; i < windows_.size(); ++i) {
             windowCut(windows_[i]);
         }
@@ -192,14 +221,20 @@ void Cutter::windowCut(const WindowRecord &wr)
 
     vts::opencv::Atlas atlas;
     for (const auto &texture : window.atlas) {
-        LOG(info3) << "Loading window texture from: " << texture.path;
+        LOG(info2) << "Loading window texture from: " << texture.path;
         atlas.add(loadTexture(texture.path));
     }
 
     auto tr(computeTileRange(worldExtents_, wr.lod, computeExtents(mesh)));
-    LOG(info3) << "Splitting window " << window.path
+    LOG(info2) << "Splitting window " << window.path
                << " to tiles in " << wr.lod << "/" << tr << ".";
     splitToTiles(wr.lod, tr, mesh, atlas);
+
+    Done done(++generated_, total_);
+
+    LOG(info3)
+        << "Split window " << done << ": " << window.path
+        << " to tiles in " << wr.lod << "/" << tr << ".";
 }
 
 void Cutter::splitToTiles(vts::Lod lod, const vts::TileRange &tr
