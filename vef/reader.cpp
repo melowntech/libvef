@@ -39,7 +39,7 @@
 #include "jsoncpp/json.hpp"
 #include "jsoncpp/as.hpp"
 
-#include "./reader.hpp"
+#include "reader.hpp"
 
 namespace fs = boost::filesystem;
 namespace bio = boost::iostreams;

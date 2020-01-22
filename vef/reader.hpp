@@ -30,7 +30,7 @@
 
 #include "roarchive/roarchive.hpp"
 
-#include "./vef.hpp"
+#include "vef.hpp"
 
 namespace vef {
 

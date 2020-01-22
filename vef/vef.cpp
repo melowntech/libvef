@@ -38,7 +38,7 @@
 #include "jsoncpp/json.hpp"
 #include "jsoncpp/as.hpp"
 
-#include "./vef.hpp"
+#include "vef.hpp"
 
 namespace fs = boost::filesystem;
 

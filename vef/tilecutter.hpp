@@ -34,7 +34,7 @@
 
 #include "vts-libs/tools-support/tmptileset.hpp"
 
-#include "./reader.hpp"
+#include "reader.hpp"
 
 namespace vef {
 

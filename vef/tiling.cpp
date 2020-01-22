@@ -33,7 +33,7 @@
 #include "geo/enu.hpp"
 #include "geo/po.hpp"
 
-#include "./tiling.hpp"
+#include "tiling.hpp"
 
 namespace vef {
 
