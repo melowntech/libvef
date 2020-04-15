@@ -72,6 +72,22 @@ std::string asExtension(Texture::Format format)
     throw;
 }
 
+void saveTrafo(Json::Value &obj, const math::Matrix4 &trafo)
+{
+    auto &jTrafo(obj["trafo"] = Json::arrayValue);
+    for (int j(0); j < 3; ++j) {
+        for (int i(0); i < 4; ++i) {
+            jTrafo.append(trafo(j, i));
+        }
+    }
+}
+
+void saveTrafo(Json::Value &obj, const boost::optional<math::Matrix4> &trafo)
+{
+    if (!trafo) { return; }
+    saveTrafo(obj, *trafo);
+}
+
 void saveManifest(std::ostream &os, const fs::path &path
                   , const Manifest &manifest)
 {
@@ -82,6 +98,8 @@ void saveManifest(std::ostream &os, const fs::path &path
         mf["srs"] = boost::lexical_cast<std::string>(*manifest.srs);
     }
 
+    saveTrafo(mf, manifest.trafo);
+
     // following code relies on the fact that path of each entity is directly
     // below the path od parent's entity
 
@@ -90,6 +108,7 @@ void saveManifest(std::ostream &os, const fs::path &path
     for (const auto &window : manifest.windows) {
         auto &jwindow(jwindows.append(Json::objectValue));
         jwindow["path"] = window.path.filename().string();
+        saveTrafo(jwindow, window.trafo);
 
         auto &jlods(jwindow["lods"] = Json::arrayValue);
 
@@ -295,6 +314,12 @@ Texture ArchiveWriter::addTexture(Id windowId, Id lod, const Texture &t
 void ArchiveWriter::setSrs(const geo::SrsDefinition &srs)
 {
     manifest_.srs = srs;
+    changed_ = true;
+}
+
+void ArchiveWriter::setTrafo(const math::Matrix4 &trafo)
+{
+    manifest_.trafo = trafo;
     changed_ = true;
 }
 
