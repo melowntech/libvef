@@ -33,7 +33,7 @@
 #include "vts-libs/vts/meshop.hpp"
 #include "vts-libs/tools-support/repackatlas.hpp"
 
-#include "./tilecutter.hpp"
+#include "tilecutter.hpp"
 
 namespace fs = boost::filesystem;
 

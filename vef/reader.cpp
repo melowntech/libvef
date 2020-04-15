@@ -39,7 +39,7 @@
 #include "jsoncpp/json.hpp"
 #include "jsoncpp/as.hpp"
 
-#include "./reader.hpp"
+#include "reader.hpp"
 
 namespace fs = boost::filesystem;
 namespace bio = boost::iostreams;
@@ -54,6 +54,22 @@ std::string ManifestName("manifest.json");
 
 namespace detail {
 
+void loadTrafo(boost::optional<math::Matrix4> &trafo, const Json::Value &obj)
+{
+    if (!value.isMember("trafo")) { return; }
+
+    const auto &jTrafo
+        (Json::check(obj["trafo"], Json::arrayValue, "trafo"));
+
+    trafo = math::identity4();
+
+    for (int ii(0), j(0); j < 3; ++j) {
+        for (int i(0); i < 4; ++i, ++ii) {
+            (*trafo)(j, i) = jTrafo[ii];
+        }
+    }
+}
+
 Manifest parse1(const Json::Value &value, const fs::path &basePath)
 {
     Manifest mf;
@@ -61,6 +77,8 @@ Manifest parse1(const Json::Value &value, const fs::path &basePath)
     if (value.isMember("srs")) {
         mf.srs = geo::SrsDefinition::fromString(value["srs"].asString());
     }
+
+    loadTrafo(mf.trafo, value);
 
     std::string path;
     for (const auto &jwindow : Json::check(value["windows"], Json::arrayValue
@@ -70,6 +88,8 @@ Manifest parse1(const Json::Value &value, const fs::path &basePath)
 
         mf.windows.emplace_back(basePath / path);
         auto &window(mf.windows.back());
+
+        loadTrafo(window.trafo, jwindow);
 
         for (const auto &jlod : Json::check(jwindow["lods"], Json::arrayValue
                                             , "manifest.windows.lods"))

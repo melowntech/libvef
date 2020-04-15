@@ -81,6 +81,7 @@ struct LoddedWindow {
     typedef std::vector<LoddedWindow> list;
 
     boost::filesystem::path path;
+    boost::optional<math::Matrix4> trafo;
     Window::list lods;
 
     LoddedWindow(const boost::filesystem::path &path) : path(path) {}
@@ -88,6 +89,7 @@ struct LoddedWindow {
 
 struct Manifest {
     boost::optional<geo::SrsDefinition> srs;
+    boost::optional<math::Matrix4> trafo;
 
     LoddedWindow::list windows;
 };
@@ -135,7 +137,13 @@ public:
     Texture addTexture(Id windowId, Id lod, const Texture &texture
                        , Texture::Format format = Texture::Format::jpeg2000);
 
+    /** Set archive SRS.
+     */
     void setSrs(const geo::SrsDefinition &srs);
+
+    /** Set archive transformation matrix.
+     */
+    void setTrafo(const math::Matrix4 &trafo);
 
     /** Flush pending changes to storage.
      */

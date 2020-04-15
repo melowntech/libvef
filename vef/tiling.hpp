@@ -31,7 +31,7 @@
  *  kind of tiling hierarchy. It makes sense to put tiling support along VEF.
  */
 
-#include "./reader.hpp"
+#include "reader.hpp"
 
 namespace vef {
 
