@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2017 Melown Technologies SE
+ * Copyright (c) 2017-20 Melown Technologies SE
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -29,6 +29,7 @@
 #include <boost/format.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/lexical_cast.hpp>
+#include <boost/utility/in_place_factory.hpp>
 
 #include "dbglog/dbglog.hpp"
 
@@ -317,10 +318,19 @@ void ArchiveWriter::setSrs(const geo::SrsDefinition &srs)
     changed_ = true;
 }
 
-void ArchiveWriter::setTrafo(const math::Matrix4 &trafo)
+void ArchiveWriter::setTrafo(const OptionalMatrix &trafo)
 {
     manifest_.trafo = trafo;
     changed_ = true;
+}
+
+OptionalMatrix windowMatrix(const Manifest &manifest
+                             , const LoddedWindow &window)
+{
+    if (!manifest.trafo) { return window.trafo; }
+    if (!window.trafo) { return manifest.trafo; }
+
+    return math::Matrix4(prod(*manifest.trafo, *window.trafo));
 }
 
 } // namespace vef

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2017 Melown Technologies SE
+ * Copyright (c) 2017-20 Melown Technologies SE
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -43,6 +43,7 @@ namespace vef {
 const std::string MainFile("manifest.json");
 
 typedef boost::optional<std::string> OptionalString;
+typedef boost::optional<math::Matrix4> OptionalMatrix;
 
 struct Texture {
     typedef std::vector<Texture> list;
@@ -81,7 +82,7 @@ struct LoddedWindow {
     typedef std::vector<LoddedWindow> list;
 
     boost::filesystem::path path;
-    boost::optional<math::Matrix4> trafo;
+    OptionalMatrix trafo;
     Window::list lods;
 
     LoddedWindow(const boost::filesystem::path &path) : path(path) {}
@@ -89,10 +90,13 @@ struct LoddedWindow {
 
 struct Manifest {
     boost::optional<geo::SrsDefinition> srs;
-    boost::optional<math::Matrix4> trafo;
+    OptionalMatrix trafo;
 
     LoddedWindow::list windows;
 };
+
+OptionalMatrix windowMatrix(const Manifest &manifest
+                            , const LoddedWindow &window);
 
 typedef std::size_t Id;
 
@@ -143,7 +147,7 @@ public:
 
     /** Set archive transformation matrix.
      */
-    void setTrafo(const math::Matrix4 &trafo);
+    void setTrafo(const OptionalMatrix &trafo);
 
     /** Flush pending changes to storage.
      */

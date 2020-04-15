@@ -35,6 +35,7 @@
 #include "dbglog/dbglog.hpp"
 
 #include "utility/path.hpp"
+#include "math/transform.hpp"
 
 #include "jsoncpp/json.hpp"
 #include "jsoncpp/as.hpp"
@@ -56,7 +57,7 @@ namespace detail {
 
 void loadTrafo(boost::optional<math::Matrix4> &trafo, const Json::Value &obj)
 {
-    if (!value.isMember("trafo")) { return; }
+    if (!obj.isMember("trafo")) { return; }
 
     const auto &jTrafo
         (Json::check(obj["trafo"], Json::arrayValue, "trafo"));
@@ -65,7 +66,7 @@ void loadTrafo(boost::optional<math::Matrix4> &trafo, const Json::Value &obj)
 
     for (int ii(0), j(0); j < 3; ++j) {
         for (int i(0); i < 4; ++i, ++ii) {
-            (*trafo)(j, i) = jTrafo[ii];
+            (*trafo)(j, i) = jTrafo[ii].asDouble();
         }
     }
 }

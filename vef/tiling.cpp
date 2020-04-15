@@ -28,6 +28,7 @@
 #include "utility/openmp.hpp"
 #include "geometry/parse-obj.hpp"
 #include "math/geometry.hpp"
+#include "math/transform.hpp"
 
 #include "geo/csconvertor.hpp"
 #include "geo/enu.hpp"
@@ -73,15 +74,23 @@ struct MeshInfo {
     }
 };
 
+math::Point3 optionalTransform(const OptionalMatrix &trafo
+                               , const math::Point3 &p)
+{
+    if (!trafo) { return p; }
+    return math::transform(*trafo, p);
+}
+
 /** Measures whole mesh extents from coarsest data.
  */
 math::Extents3 meshExtents(const Archive &archive)
 {
     struct ExtentsMeasurer : public geometry::ObjParserBase {
-        ExtentsMeasurer() : extents(math::InvalidExtents{}) {}
+        ExtentsMeasurer()
+            : extents(math::InvalidExtents{}) {}
 
         virtual void addVertex(const Vector3d &v) {
-            math::update(extents, math::Point3d(v));
+            math::update(extents, optionalTransform(trafo, math::Point3d(v)));
         }
 
         virtual void addTexture(const Vector3d&) {}
@@ -90,6 +99,7 @@ math::Extents3 meshExtents(const Archive &archive)
         virtual void materialLibrary(const std::string&) {}
         virtual void useMaterial(const std::string&) {}
 
+        OptionalMatrix trafo;
         math::Extents3 extents;
     };
 
@@ -97,6 +107,7 @@ math::Extents3 meshExtents(const Archive &archive)
 
     for (const auto &lw : archive.manifest().windows) {
         const auto &window(lw.lods.back());
+        em.trafo = windowMatrix(archive.manifest(), lw);
         if (!em.parse(*archive.meshIStream(window.mesh))) {
             LOGTHROW(err2, std::runtime_error)
                 << "Unable to load mesh from OBJ file at "
@@ -122,20 +133,22 @@ inline double triangleArea(const math::Point2 &a, const math::Point2 &b,
 }
 
 MeshInfo measureMesh(const Archive &archive, const Mesh &mesh
+                     , const OptionalMatrix &trafo
                      , const geo::CsConvertor &conv)
 {
     LOG(info2) << "Loading mesh from " << mesh.path << ".";
 
     class MeshMeasurer : public geometry::ObjParserBase {
     public:
-        MeshMeasurer(const geo::CsConvertor &conv)
-            : conv_(conv)
+        MeshMeasurer(const OptionalMatrix &trafo, const geo::CsConvertor &conv)
+            : trafo_(trafo), conv_(conv)
         {
             useMaterial(0);
         }
 
         virtual void addVertex(const Vector3d &v) {
-            vertices_.push_back(conv_(math::Point3(v.x, v.y, v.z)));
+            vertices_.push_back
+                (conv_(optionalTransform(trafo_, math::Point3(v))));
         }
 
         virtual void addTexture(const Vector3d &t) {
@@ -183,6 +196,7 @@ MeshInfo measureMesh(const Archive &archive, const Mesh &mesh
         virtual void materialLibrary(const std::string&) { /*ignored*/ }
 
     private:
+        const OptionalMatrix &trafo_;
         const geo::CsConvertor &conv_;
 
         math::Points3 vertices_;
@@ -191,7 +205,7 @@ MeshInfo measureMesh(const Archive &archive, const Mesh &mesh
         unsigned int textureId_;
     };
 
-    MeshMeasurer mm(conv);
+    MeshMeasurer mm(trafo, conv);
     if (!mm.parse(*archive.meshIStream(mesh))) {
         LOGTHROW(err2, std::runtime_error)
             << "Unable to load mesh from OBJ file at " << mesh.path << ".";
@@ -208,9 +222,12 @@ MeshInfo measureMeshes(const Archive &archive
 
     UTILITY_OMP(parallel for)
     for (std::size_t i = 0; i < windows.size(); ++i) {
-        const auto &window(windows[i].lods.front());
+        const auto &lWindows(windows[i]);
+        const auto &window(lWindows.lods.front());
 
-        auto a(measureMesh(archive, window.mesh, conv));
+        auto a(measureMesh(archive, window.mesh
+                           , windowMatrix(archive.manifest(), lWindows)
+                           , conv));
 
         // expand texture area
         auto iatlas(window.atlas.begin());

@@ -29,6 +29,7 @@
 #include <opencv2/highgui/highgui.hpp>
 
 #include "utility/openmp.hpp"
+#include "math/transform.hpp"
 
 #include "vts-libs/vts/meshop.hpp"
 #include "vts-libs/tools-support/repackatlas.hpp"
@@ -49,9 +50,11 @@ namespace {
 struct WindowRecord {
     const vef::Window *window;
     vts::Lod lod;
+    vef::OptionalMatrix trafo;
 
-    WindowRecord(const vef::Window &window, vts::Lod lod)
-        : window(&window), lod(lod)
+    WindowRecord(const vef::Window &window, vts::Lod lod
+                 , const vef::OptionalMatrix &trafo)
+        : window(&window), lod(lod), trafo(trafo)
     {}
 
     typedef std::vector<WindowRecord> list;
@@ -63,9 +66,10 @@ WindowRecord::list windowRecordList(const vef::Archive &archive
     WindowRecord::list list;
 
     for (const auto &lw : archive.manifest().windows) {
+        const auto trafo(vef::windowMatrix(archive.manifest(), lw));
         auto lod(maxLod);
         for (const auto &w : lw.lods) {
-            list.emplace_back(w, lod--);
+            list.emplace_back(w, lod--, trafo);
         }
     }
 
@@ -80,6 +84,17 @@ inline void warpInPlace(vts::SubMesh &mesh, const geo::CsConvertor &conv)
 inline void warpInPlace(vts::Mesh &mesh, const geo::CsConvertor &conv)
 {
     for (auto &sm : mesh) { warpInPlace(sm, conv); }
+}
+
+inline void transformInPlace(vts::SubMesh &mesh, const math::Matrix4 &trafo)
+{
+    for (auto &v : mesh.vertices) { v = math::transform(trafo, v); }
+}
+
+inline void transformInPlace(vts::Mesh &mesh, const OptionalMatrix &trafo)
+{
+    if (!trafo) { return; }
+    for (auto &sm : mesh) { transformInPlace(sm, *trafo); }
 }
 
 struct Done {
@@ -212,6 +227,7 @@ void Cutter::windowCut(const WindowRecord &wr)
     LOG(info2) << "Cutting window mesh from " << wm.path << ".";
     auto mesh(vts::loadMeshFromObj(*archive_.meshIStream(wm), wm.path));
     warpInPlace(mesh, vef2world_);
+    transformInPlace(mesh, wr.trafo);
 
     if (mesh.submeshes.size() != window.atlas.size()) {
         LOGTHROW(err2, std::runtime_error)
