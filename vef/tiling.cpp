@@ -151,7 +151,12 @@ MeshInfo measureMesh(const Archive &archive, const Mesh &mesh
 
         virtual void useMaterial(const std::string &m) {
             // get new material index
-            useMaterial(boost::lexical_cast<unsigned int>(m));
+            try {
+                useMaterial(boost::lexical_cast<unsigned int>(m));
+            } catch (const boost::bad_lexical_cast &e) {
+                LOGTHROW(err2, std::runtime_error)
+                    << "Not a numberic material: <" << m << ">.";
+            }
         }
 
         void useMaterial(unsigned int textureId) {
