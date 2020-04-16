@@ -113,7 +113,8 @@ public:
 
     /** Adds new lodded window collection.
      */
-    Id addWindow(const OptionalString &path = boost::none);
+    Id addWindow(const OptionalString &path = boost::none
+                 , const OptionalMatrix &trafo = boost::none);
 
     /** Adds new lod to window.
      *

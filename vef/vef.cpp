@@ -210,7 +210,8 @@ void ArchiveWriter::flush()
     changed_ = false;
 }
 
-Id ArchiveWriter::addWindow(const OptionalString &path)
+Id ArchiveWriter::addWindow(const OptionalString &path
+                            , const OptionalMatrix &trafo)
 {
     changed_ = true;
     auto index(manifest_.windows.size());
@@ -221,7 +222,9 @@ Id ArchiveWriter::addWindow(const OptionalString &path)
         manifest_.windows.emplace_back
             (root_ / boost::lexical_cast<std::string>(index));
     }
-    create_directories(manifest_.windows.back().path);
+    auto &window(manifest_.windows.back());
+    window.trafo = trafo;
+    create_directories(window.path);
     return index;
 }
 
