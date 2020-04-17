@@ -38,12 +38,13 @@ namespace vef {
 struct Tiling {
     geo::SrsDefinition srcSrs;
 
-    math::Extents2 workExtents;
+    math::Extents3 workExtents;
     geo::SrsDefinition workSrs;
 
     int maxLod;
 
-    Tiling(const Archive &archive, const math::Size2 &optimalTextureSize);
+    Tiling(const Archive &archive, const math::Size2 &optimalTextureSize
+           , bool for3dCutting = false);
 
     Tiling(std::ostream &os);
 

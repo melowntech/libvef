@@ -54,6 +54,22 @@ void cutToTiles(vtslibs::vts::tools::TmpTileset &ts
                 , const geo::CsConvertor &vef2world
                 , int maxLod, double clipMargin = 1.0 / 128.);
 
+/** Cut source meshes to tiles in binomic division. World is specified by
+ *  `worldExtents` (i.e. tile 0-0-0). Meshes from archive are converted to world
+ *  using provided `ved2world` convertor.
+ *
+ *  Archive's original data is mapped to `maxLod`.
+ *
+ *  Tiles are clipped with given tile margin.
+ *
+ *  Output is stored in the provided temporary tileset.
+ */
+void cutToTiles(vtslibs::vts::tools::TmpTileset &ts
+                , const vef::Archive &archive
+                , const math::Extents3 &worldExtents
+                , const geo::CsConvertor &vef2world
+                , int maxLod, double clipMargin = 1.0 / 128.);
+
 } // namespace vef
 
 #endif // vef_vef_tilecutter_included_

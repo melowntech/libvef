@@ -62,7 +62,7 @@ struct MeshArea {
 
 struct MeshInfo {
     MeshArea area;
-    math::Extents2 extents;
+    math::Extents3 extents;
 
     MeshInfo() : extents(math::InvalidExtents{}) {}
 
@@ -187,7 +187,7 @@ MeshInfo measureMesh(const Archive &archive, const Mesh &mesh
             }
 
             for (const auto &v : vertices_) {
-                math::update(mi.extents, v(0), v(1));
+                math::update(mi.extents, v);
             }
             return mi;
         }
@@ -245,7 +245,7 @@ MeshInfo measureMeshes(const Archive &archive
 }
 
 struct MeshParams {
-    math::Extents2 extents;
+    math::Extents3 extents;
     geo::SrsDefinition workSrs;
     double pixelArea;
 
@@ -296,19 +296,22 @@ MeshParams analyzeMesh(const Archive &archive)
     return mp;
 }
 
-math::Extents2 makeExtents(const math::Point2 &center
-                           , const math::Size2f &size)
+math::Extents3 makeExtents(const math::Point3 &center
+                           , const math::Size3f &size)
 {
     // measure extents
     return { center(0) - size.width / 2.0
-            , center(1) - size.height / 2.0
-            , center(0) + size.width  / 2.0
-            , center(1) + size.height  / 2.0 };
+             , center(1) - size.height / 2.0
+             , center(2) - size.depth / 2.0
+             , center(0) + size.width / 2.0
+             , center(1) + size.height / 2.0
+             , center(2) + size.depth / 2.0 };
 }
 
 } // namespace
 
-Tiling::Tiling(const Archive &archive, const math::Size2 &optimalTextureSize)
+Tiling::Tiling(const Archive &archive, const math::Size2 &optimalTextureSize
+               , bool for3dCutting)
     : srcSrs(*archive.manifest().srs), maxLod()
 {
     const auto mp(analyzeMesh(archive));
@@ -336,17 +339,26 @@ Tiling::Tiling(const Archive &archive, const math::Size2 &optimalTextureSize)
 
     const auto sceneSize(math::size(mp.extents));
 
+    // max tile depth, average of width and height
+    auto maxTileDepth((maxTileSize.width + maxTileSize.height) / 2.0);
+
     // size of scene in max-tiles (square)
     auto sizeInTiles
         (std::max(std::ceil(sceneSize.width / maxTileSize.width)
                   , std::ceil(sceneSize.height / maxTileSize.height)));
 
+    if (for3dCutting) {
+        sizeInTiles = std::max
+            (sizeInTiles, std::ceil(sceneSize.depth / maxTileDepth));
+    }
+
     // number of lods needed to add above scene top lod
     const int headLods(std::ceil(std::log2(sizeInTiles)));
 
-    const math::Size2f worldSize
+    math::Size3f worldSize
         ((1 << headLods) * maxTileSize.width
-         , (1 << headLods) * maxTileSize.height);
+         , (1 << headLods) * maxTileSize.height
+         , (1 << headLods) * maxTileDepth);
 
     workExtents = makeExtents(math::center(mp.extents), worldSize);
 
