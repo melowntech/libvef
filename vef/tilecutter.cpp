@@ -314,6 +314,18 @@ math::Extent tileVerticalExtent(const math::Extent &rootExtent
         (rootExtent.l + z * ts, rootExtent.l + (z + 1) * ts);
 }
 
+/** Inflates tile extents by given margin in all 4 directions.
+ *
+ *  On bordering edges (defined by borderCondition) borderMargin is used
+ *  instead.
+ *
+ *  Margins are defined as a fraction of tile width/height.
+ */
+math::Extent inflateTileExtent(const math::Extent &extent, double margin)
+{
+    return math::Extent(extent.l - margin, extent.r + margin);
+}
+
 void Cutter::tileCut(const vts::TileId &tileId, const vts::Mesh &mesh
                      , const vts::opencv::Atlas &atlas)
 {
@@ -336,11 +348,15 @@ void Cutter::tileCut(const vts::TileId &tileId, const vts::Mesh &mesh
             auto ts(computeVerticalTileSpan(verticalExtent_, tileId.lod
                                             , computeVerticalExtent(sm)));
             for (auto i(ts.l); i <= ts.r; ++i) {
-                auto ve(tileVerticalExtent(verticalExtent_, tileId.lod, i));
-                LOG(info4) << "ve: " << std::fixed << ve;
+                auto ve(inflateTileExtent
+                        (tileVerticalExtent(verticalExtent_, tileId.lod, i)
+                         , clipMargin_));
 
                 auto vm(vts::clip(m, ve));
                 if (vm.empty()) { continue; }
+
+                // store third tile-id component in z-index
+                vm.zIndex = i;
 
                 clipped.submeshes.push_back(std::move(vm));
                 clippedAtlas.add(texture);
@@ -356,6 +372,7 @@ void Cutter::tileCut(const vts::TileId &tileId, const vts::Mesh &mesh
 
     // store in temporary storage
     tools::repack(tileId, clipped, clippedAtlas);
+    LOG(info4) << "clipped.size(): " << clipped.size();
     ts_.store(tileId, clipped, clippedAtlas);
 }
 
