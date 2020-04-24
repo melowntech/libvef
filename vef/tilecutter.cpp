@@ -372,7 +372,6 @@ void Cutter::tileCut(const vts::TileId &tileId, const vts::Mesh &mesh
 
     // store in temporary storage
     tools::repack(tileId, clipped, clippedAtlas);
-    LOG(info4) << "clipped.size(): " << clipped.size();
     ts_.store(tileId, clipped, clippedAtlas);
 }
 
