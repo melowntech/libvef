@@ -30,6 +30,7 @@
 
 #include "utility/openmp.hpp"
 #include "math/transform.hpp"
+#include "math/extent.hpp"
 
 #include "vts-libs/vts/meshop.hpp"
 #include "vts-libs/tools-support/repackatlas.hpp"
@@ -39,6 +40,7 @@
 namespace fs = boost::filesystem;
 
 namespace vts = vtslibs::vts;
+namespace vs = vtslibs::storage;
 namespace tools = vtslibs::vts::tools;
 
 namespace vef {
@@ -125,10 +127,12 @@ class Cutter {
 public:
     Cutter(tools::TmpTileset &ts, const vef::Archive &archive
            , const math::Extents2 &worldExtents
+           , const math::Extent &verticalExtent
            , const geo::CsConvertor &vef2world
            , int maxLod, double clipMargin)
         : ts_(ts), archive_(archive)
         , worldExtents_(worldExtents)
+        , verticalExtent_(verticalExtent)
         , vef2world_(vef2world)
         , clipMargin_(clipMargin)
         , windows_(windowRecordList(archive_, maxLod))
@@ -151,9 +155,10 @@ private:
 
     tools::TmpTileset &ts_;
     const vef::Archive &archive_;
-    const math::Extents2 &worldExtents_;
+    const math::Extents2& worldExtents_;
+    const math::Extent& verticalExtent_;
     const geo::CsConvertor &vef2world_;
-    const  double clipMargin_;
+    const double clipMargin_;
     WindowRecord::list windows_;
     std::atomic<std::size_t> generated_;
     std::size_t total_;
@@ -203,6 +208,28 @@ math::Extents2 computeExtents(const vts::Mesh &mesh)
     return extents;
 }
 
+math::Extent computeVerticalExtent(const vts::SubMesh &sm)
+{
+    math::Extent extent(math::InvalidExtents{});
+    for (const auto &p : sm.vertices) { update(extent, p(2)); }
+    return extent;
+}
+
+vts::TileSpan computeVerticalTileSpan(const math::Extent &rootExtent
+                                      , vts::Lod lod
+                                      , const math::Extent &meshExtent)
+{
+    vts::TileSpan s(math::InvalidExtents{});
+    const auto ts(vts::tileSize(rootExtent, lod));
+    const auto origin(math::l(rootExtent));
+
+    for (const auto &p : { meshExtent.l, meshExtent.r }) {
+        update(s, vts::TileSpan::point_type((p - origin) / ts));
+    }
+
+    return s;
+}
+
 vts::TileRange computeTileRange(const math::Extents2 &worldExtents
                                 , vts::Lod lod
                                 , const math::Extents2 &meshExtents)
@@ -226,8 +253,8 @@ void Cutter::windowCut(const WindowRecord &wr)
     const auto &wm(window.mesh);
     LOG(info2) << "Cutting window mesh from " << wm.path << ".";
     auto mesh(vts::loadMeshFromObj(*archive_.meshIStream(wm), wm.path));
-    warpInPlace(mesh, vef2world_);
     transformInPlace(mesh, wr.trafo);
+    warpInPlace(mesh, vef2world_);
 
     if (mesh.submeshes.size() != window.atlas.size()) {
         LOGTHROW(err2, std::runtime_error)
@@ -278,6 +305,27 @@ math::Extents2 tileExtents(const math::Extents2 &rootExtents
          , rootExtents.ur(1) - tileId.y * ts.height);
 }
 
+math::Extent tileVerticalExtent(const math::Extent &rootExtent
+                                , const vts::Lod lod
+                                , vts::TileSpan::value_type z)
+{
+    auto ts(vts::tileSize(rootExtent, lod));
+    return math::Extent
+        (rootExtent.l + z * ts, rootExtent.l + (z + 1) * ts);
+}
+
+/** Inflates tile extents by given margin in all 4 directions.
+ *
+ *  On bordering edges (defined by borderCondition) borderMargin is used
+ *  instead.
+ *
+ *  Margins are defined as a fraction of tile width/height.
+ */
+math::Extent inflateTileExtent(const math::Extent &extent, double margin)
+{
+    return math::Extent(extent.l - margin, extent.r + margin);
+}
+
 void Cutter::tileCut(const vts::TileId &tileId, const vts::Mesh &mesh
                      , const vts::opencv::Atlas &atlas)
 {
@@ -294,6 +342,27 @@ void Cutter::tileCut(const vts::TileId &tileId, const vts::Mesh &mesh
 
         auto m(vts::clip(sm, extents));
         if (m.empty()) { continue; }
+
+        // cut again if cutting to cubes
+        if (math::valid(verticalExtent_)) {
+            auto ts(computeVerticalTileSpan(verticalExtent_, tileId.lod
+                                            , computeVerticalExtent(sm)));
+            for (auto i(ts.l); i <= ts.r; ++i) {
+                auto ve(inflateTileExtent
+                        (tileVerticalExtent(verticalExtent_, tileId.lod, i)
+                         , clipMargin_));
+
+                auto vm(vts::clip(m, ve));
+                if (vm.empty()) { continue; }
+
+                // store third tile-id component in z-index
+                vm.zIndex = i;
+
+                clipped.submeshes.push_back(std::move(vm));
+                clippedAtlas.add(texture);
+            }
+            continue;
+        }
 
         clipped.submeshes.push_back(std::move(m));
         clippedAtlas.add(texture);
@@ -313,7 +382,18 @@ void cutToTiles(tools::TmpTileset &ts, const vef::Archive &archive
                 , const geo::CsConvertor &vef2world
                 , int maxLod, double clipMargin)
 {
-    Cutter(ts, archive, worldExtents, vef2world, maxLod, clipMargin)();
+    Cutter(ts, archive, worldExtents, math::extent(worldExtents, 2)
+           , vef2world, maxLod, clipMargin)();
+}
+
+void cutToTiles(tools::TmpTileset &ts, const vef::Archive &archive
+                , const math::Extents3 &worldExtents
+                , const geo::CsConvertor &vef2world
+                , int maxLod, double clipMargin)
+{
+    Cutter(ts, archive, math::extents2(worldExtents)
+           , math::extent(worldExtents, 2), vef2world
+           , maxLod, clipMargin)();
 }
 
 } // namespace vef
