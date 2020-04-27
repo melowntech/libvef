@@ -1,5 +1,5 @@
 # bump version here
-set(vef_VERSION 1.3)
+set(vef_VERSION 1.4)
 
 set(vef_EXTRA_DEPENDS)
 set(vef_EXTRA_SOURCES)
@@ -22,7 +22,7 @@ endif()
 
 if(MODULE_roarchive_FOUND AND MODULE_vts-libs-tools-support_FOUND)
   message(STATUS "vef: compiling in VTS tools support")
-  list(APPEND vef_EXTRA_DEPENDS vts-libs-tools-support)
+  list(APPEND vef_EXTRA_DEPENDS vts-libs-tools-support>=2.15)
   list(APPEND vef_EXTRA_SOURCES tilecutter.hpp tilecutter.cpp)
 else()
   message(STATUS "vef: compiling without VTS tools support")
