@@ -29,6 +29,7 @@
 #include "geometry/parse-obj.hpp"
 #include "math/geometry.hpp"
 #include "math/transform.hpp"
+#include "math/math.hpp"
 
 #include "geo/csconvertor.hpp"
 #include "geo/enu.hpp"
@@ -252,8 +253,13 @@ struct MeshParams {
     MeshParams() : pixelArea() {}
 };
 
-inline double pixelArea(const MeshArea &area)
+inline double pixelArea(const MeshArea &area
+                        , const boost::optional<double> &resolution
+                        = boost::none)
 {
+    // override
+    if (resolution) { return math::sqr(resolution.value()); }
+
     double ta(0);
     for (const auto &sm : area.submeshes) {
         ta += sm.texture;
@@ -261,7 +267,9 @@ inline double pixelArea(const MeshArea &area)
     return area.mesh / ta;
 }
 
-MeshParams analyzeMesh(const Archive &archive)
+MeshParams
+analyzeMesh(const Archive &archive
+            , const boost::optional<double> &resolution = boost::none)
 {
     const auto &srcSrs(*archive.manifest().srs);
 
@@ -272,7 +280,7 @@ MeshParams analyzeMesh(const Archive &archive)
         MeshParams mp;
         mp.extents = mi.extents;
         mp.workSrs = srcSrs;
-        mp.pixelArea = pixelArea(mi.area);
+        mp.pixelArea = pixelArea(mi.area, resolution);
         return mp;
     }
 
@@ -311,10 +319,11 @@ math::Extents3 makeExtents(const math::Point3 &center
 } // namespace
 
 Tiling::Tiling(const Archive &archive, const math::Size2 &optimalTextureSize
-               , bool for3dCutting)
+               , bool for3dCutting
+               , const boost::optional<double> &resolution)
     : srcSrs(*archive.manifest().srs), maxLod()
 {
-    const auto mp(analyzeMesh(archive));
+    const auto mp(analyzeMesh(archive, resolution));
 
     workSrs = mp.workSrs;
 

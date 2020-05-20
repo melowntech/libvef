@@ -31,6 +31,8 @@
  *  kind of tiling hierarchy. It makes sense to put tiling support along VEF.
  */
 
+#include <boost/optional.hpp>
+
 #include "reader.hpp"
 
 namespace vef {
@@ -44,7 +46,8 @@ struct Tiling {
     int maxLod;
 
     Tiling(const Archive &archive, const math::Size2 &optimalTextureSize
-           , bool for3dCutting = false);
+           , bool for3dCutting = false
+           , const boost::optional<double> &resolution = boost::none);
 
     Tiling(std::ostream &os);
 
