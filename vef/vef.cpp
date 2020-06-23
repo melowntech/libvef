@@ -90,7 +90,7 @@ void saveTrafo(Json::Value &obj, const boost::optional<math::Matrix4> &trafo)
 }
 
 void saveManifest(std::ostream &os, const fs::path &path
-                  , const Manifest &manifest)
+                  , const Manifest &manifest, const fs::path &root)
 {
     Json::Value mf(Json::objectValue);
 
@@ -101,31 +101,40 @@ void saveManifest(std::ostream &os, const fs::path &path
 
     saveTrafo(mf, manifest.trafo);
 
-    // following code relies on the fact that path of each entity is directly
-    // below the path od parent's entity
+    const auto localPath([](const fs::path &path, const fs::path &root)
+                         -> std::string
+    {
+        const auto str(utility::lexically_relative(path, root).string());
+        if (str == ".") { return {}; }
+        return str;
+    });
 
     auto &jwindows(mf["windows"] = Json::arrayValue);
 
     for (const auto &window : manifest.windows) {
         auto &jwindow(jwindows.append(Json::objectValue));
-        jwindow["path"] = window.path.filename().string();
+        const auto windowPath(fs::absolute(window.path, root));
+        jwindow["path"] = localPath(windowPath, root);
         saveTrafo(jwindow, window.trafo);
 
         auto &jlods(jwindow["lods"] = Json::arrayValue);
 
         for (const auto &lod : window.lods) {
             auto &jlod(jlods.append(Json::objectValue));
-            jlod["path"] = lod.path.filename().string();
+            const auto lodPath(fs::absolute(lod.path, windowPath));
+            jlod["path"] = localPath(lod.path, windowPath);
 
             auto &jmesh(jlod["mesh"] = Json::objectValue);
-            jmesh["path"] = lod.mesh.path.filename().string();
+            const auto meshPath(fs::absolute(lod.mesh.path, lodPath));
+            jmesh["path"] = localPath(meshPath, lodPath);
             jmesh["format"]
                 = boost::lexical_cast<std::string>(lod.mesh.format);
 
             auto &atlas(jlod["atlas"] = Json::arrayValue);
             for (const auto &texture : lod.atlas) {
                 auto &jtexture(atlas.append(Json::objectValue));
-                jtexture["path"] = texture.path.filename().string();
+                const auto texturePath(fs::absolute(texture.path, lodPath));
+                jtexture["path"] = localPath(texture.path, lodPath);
 
                 auto &size(jtexture["size"] = Json::arrayValue);
                 size.append(texture.size.width);
@@ -143,19 +152,19 @@ void saveManifest(std::ostream &os, const fs::path &path
     (void) path;
 }
 
-void saveManifest(const fs::path &path, const Manifest &manifest)
+void saveManifest(const fs::path &path, const Manifest &manifest
+                  , const fs::path &root)
 {
     std::ofstream f;
     f.exceptions(std::ios::badbit | std::ios::failbit);
     f.open(path.string(), std::ios_base::out);
-    saveManifest(f, path, manifest);
+    saveManifest(f, path, manifest, root);
     f.close();
 }
 
 } // namespace
 
-ArchiveWriter::ArchiveWriter(const fs::path &root
-                                             , bool overwrite)
+ArchiveWriter::ArchiveWriter(const fs::path &root, bool overwrite)
     : root_(root), changed_(false)
 {
     if (!create_directories(root_)) {
@@ -185,7 +194,7 @@ void ArchiveWriter::flush()
 {
     if (!changed_) { return; }
 
-    saveManifest(root_ / constants::ManifestName, manifest_);
+    saveManifest(root_ / constants::ManifestName, manifest_, root_);
 
     // write MTL files
     for (const auto &window : manifest_.windows) {
@@ -216,8 +225,7 @@ Id ArchiveWriter::addWindow(const OptionalString &path
     changed_ = true;
     auto index(manifest_.windows.size());
     if (path) {
-        // TODO: convert / to _
-        manifest_.windows.emplace_back(root_ / *path);
+        manifest_.windows.emplace_back(fs::absolute(*path, root_));
     } else {
         manifest_.windows.emplace_back
             (root_ / boost::lexical_cast<std::string>(index));
