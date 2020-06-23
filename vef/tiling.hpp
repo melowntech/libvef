@@ -37,6 +37,9 @@
 
 namespace vef {
 
+using ArchiveCRef = std::reference_wrapper<const Archive>;
+using Archives = std::vector<ArchiveCRef>;
+
 struct Tiling {
     geo::SrsDefinition srcSrs;
 
@@ -45,7 +48,18 @@ struct Tiling {
 
     int maxLod;
 
-    Tiling(const Archive &archive, const math::Size2 &optimalTextureSize
+    Tiling(const Archive &archive
+           , const math::Size2 &optimalTextureSize
+           , bool for3dCutting = false
+           , const boost::optional<double> &resolution = boost::none);
+
+    Tiling(const Archive::list &archives
+           , const math::Size2 &optimalTextureSize
+           , bool for3dCutting = false
+           , const boost::optional<double> &resolution = boost::none);
+
+    Tiling(const Archives &archives
+           , const math::Size2 &optimalTextureSize
            , bool for3dCutting = false
            , const boost::optional<double> &resolution = boost::none);
 
@@ -53,6 +67,23 @@ struct Tiling {
 
     void save(std::ostream &os) const;
 };
+
+// inlines
+
+inline Tiling::Tiling(const Archive &archive
+                      , const math::Size2 &optimalTextureSize
+                      , bool for3dCutting
+                      , const boost::optional<double> &resolution)
+    : Tiling(Archives({std::cref(archive)}), optimalTextureSize, for3dCutting, resolution)
+{}
+
+inline Tiling::Tiling(const Archive::list &archives
+                      , const math::Size2 &optimalTextureSize
+                      , bool for3dCutting
+                      , const boost::optional<double> &resolution)
+    : Tiling(Archives(archives.begin(), archives.end())
+             , optimalTextureSize, for3dCutting, resolution)
+{}
 
 } // namespace vef
 

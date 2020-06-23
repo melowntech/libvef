@@ -26,6 +26,8 @@
 #ifndef vef_reader_hpp_included_
 #define vef_reader_hpp_included_
 
+#include <vector>
+
 #include <boost/optional.hpp>
 
 #include "roarchive/roarchive.hpp"
@@ -38,6 +40,8 @@ namespace vef {
  */
 class Archive {
 public:
+    using list = std::vector<Archive>;
+
     Archive(const boost::filesystem::path &root);
 
     Archive(roarchive::RoArchive &archive);
@@ -45,6 +49,8 @@ public:
     const Manifest& manifest() const { return manifest_; }
 
     const roarchive::RoArchive archive() const { return archive_; }
+
+    const boost::filesystem::path path() const { return archive_.path(); }
 
     /** Get istream for mesh
      */

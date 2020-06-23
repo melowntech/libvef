@@ -215,7 +215,7 @@ MeshInfo measureMesh(const Archive &archive, const Mesh &mesh
 }
 
 MeshInfo measureMeshes(const Archive &archive
-                       , const geo::CsConvertor &conv)
+                       , const geo::CsConvertor &conv = geo::CsConvertor())
 {
     MeshInfo mi;
 
@@ -267,39 +267,89 @@ inline double pixelArea(const MeshArea &area
     return area.mesh / ta;
 }
 
+inline bool compatible(const geo::SrsDefinition &srs)
+{
+    return (geo::isProjected(srs) || srs.is(geo::SrsDefinition::Type::enu));
+}
+
 MeshParams
 analyzeMesh(const Archive &archive
             , const boost::optional<double> &resolution = boost::none)
 {
-    const auto &srcSrs(*archive.manifest().srs);
+    const auto &srs(archive.manifest().srs.value());
 
-    if (srcSrs.is(geo::SrsDefinition::Type::enu)) {
-        // fine, it's ENU -> measure mesh in src/work SRS
-        const auto mi(measureMeshes(archive, geo::CsConvertor()));
+    if (compatible(srs)) {
+        // work in given SRS
+        const auto mi(measureMeshes(archive));
 
         MeshParams mp;
         mp.extents = mi.extents;
-        mp.workSrs = srcSrs;
+        mp.workSrs = srs;
         mp.pixelArea = pixelArea(mi.area, resolution);
         return mp;
     }
 
-    // not ENU, build one
-
-    // get center of mesh in its source SRS
-    const auto center(math::center(meshExtents(archive)));
-
     // build ENU
-    // TODO: extract spheroid and towgs84 from srsSrs
-    geo::Enu enu(geo::CsConvertor(srcSrs, srcSrs.geographic())(center));
+
+    // TODO: extract spheroid and towgs84 from srs
+    const auto center(math::center(meshExtents(archive)));
+    geo::Enu enu(geo::CsConvertor(srs, srs.geographic())(center));
 
     MeshParams mp;
     mp.workSrs = geo::SrsDefinition::fromEnu(enu);
 
     // measure mesh in work SRS
-    const auto mi(measureMeshes(archive, geo::CsConvertor(srcSrs, enu)));
+    const auto mi(measureMeshes(archive, geo::CsConvertor(srs, enu)));
     mp.extents = mi.extents;
     mp.pixelArea = pixelArea(mi.area);
+
+    return mp;
+}
+
+MeshParams
+analyzeMesh(const Archives &archives
+            , const boost::optional<double> &resolution = boost::none)
+{
+    if (archives.size() == 1) {
+        // single archive
+        return analyzeMesh(archives.front(), resolution);
+    }
+
+    // multiple archives
+    geo::SrsDefinition srs(archives.front().get().manifest().srs.value());
+    bool useSrs(compatible(srs));
+
+    if (useSrs) {
+        for (const Archive &archive : archives) {
+            geo::SrsDefinition asrs(archive.manifest().srs.value());
+            if (!geo::areSame(srs, asrs)) {
+                // srs is not compatible or is not same as the first SRS
+                useSrs = false;
+                break;
+            }
+        }
+    }
+
+    MeshParams mp;
+
+    if (useSrs) {
+        // work in given SRS
+        MeshInfo mi;
+        // combine all meshes
+        for (const Archive &archive : archives) {
+            const auto ami(measureMeshes(archive));
+            mi.update(ami);
+        }
+
+        mp.extents = mi.extents;
+        mp.workSrs = srs;
+        mp.pixelArea = pixelArea(mi.area, resolution);
+        return mp;
+    } else {
+        // TODO: use common ENU
+        LOGTHROW(err3, std::runtime_error)
+            << "Support for different SRS not implemented, yet.";
+    }
 
     return mp;
 }
@@ -318,19 +368,36 @@ math::Extents3 makeExtents(const math::Point3 &center
 
 } // namespace
 
-Tiling::Tiling(const Archive &archive, const math::Size2 &optimalTextureSize
+Tiling::Tiling(const Archives &archives
+               , const math::Size2 &optimalTextureSize
                , bool for3dCutting
                , const boost::optional<double> &resolution)
-    : srcSrs(*archive.manifest().srs), maxLod()
+    : maxLod()
 {
-    const auto mp(analyzeMesh(archive, resolution));
+    // sanity checks
+    if (archives.empty()) {
+        LOGTHROW(err2, std::runtime_error)
+            << "Tiling needs at least one VEF archive to work with.";
+    }
+
+    for (const Archive &archive : archives) {
+        if (!archive.manifest().srs) {
+            LOGTHROW(err2, std::runtime_error)
+                << "Archive " << archive.path() << " is not georeferenced "
+                "(missing SRS field).";
+        }
+    }
+
+    const auto mp(analyzeMesh(archives, resolution));
 
     workSrs = mp.workSrs;
 
     int depth(0);
-    for (const auto &lw : archive.manifest().windows) {
-        const int nd(lw.lods.size());
-        if (nd > depth) { depth = nd; }
+    for (const Archive &archive : archives) {
+        for (const auto &lw : archive.manifest().windows) {
+            const int nd(lw.lods.size());
+            if (nd > depth) { depth = nd; }
+        }
     }
 
     auto lodDiff(depth - 1);
