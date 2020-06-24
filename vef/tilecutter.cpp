@@ -137,7 +137,9 @@ public:
         , clipMargin_(clipMargin)
         , windows_(windowRecordList(archive_, maxLod))
         , generated_(), total_(windows_.size())
-    {}
+    {
+        LOG(info3) << "Cutting " << archive.path() << " into tiles.";
+    }
 
     void operator()(/**vt::ExternalProgress &progress*/);
 
