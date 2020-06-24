@@ -165,7 +165,7 @@ void saveManifest(const fs::path &path, const Manifest &manifest
 } // namespace
 
 ArchiveWriter::ArchiveWriter(const fs::path &root, bool overwrite)
-    : root_(root), changed_(false)
+    : root_(fs::absolute(root)), changed_(false)
 {
     if (!create_directories(root_)) {
         // directory already exists -> fail if mode says so
