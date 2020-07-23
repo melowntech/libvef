@@ -188,6 +188,7 @@ cv::Mat Cutter::loadTexture(const fs::path &path) const
             LOGTHROW(err2, std::runtime_error)
                 << "Unable to load texture from " << path << ".";
         }
+        return tex;
     }
 
     auto is(archive.istream(path));
