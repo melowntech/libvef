@@ -32,7 +32,6 @@
 #include "math/transform.hpp"
 #include "math/extent.hpp"
 
-#include "imgproc/cvcompat.hpp"
 
 #include "vts-libs/vts/meshop.hpp"
 #include "vts-libs/tools-support/repackatlas.hpp"
@@ -192,7 +191,7 @@ cv::Mat Cutter::loadTexture(const fs::path &path) const
     }
 
     auto is(archive.istream(path));
-    auto tex(cv::imdecode(is->read(), IMGPROC_IMREAD(COLOR)));
+    auto tex(cv::imdecode(is->read(), cv::IMREAD_COLOR));
 
     if (!tex.data) {
         LOGTHROW(err2, std::runtime_error)
