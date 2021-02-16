@@ -41,8 +41,6 @@ using ArchiveCRef = std::reference_wrapper<const Archive>;
 using Archives = std::vector<ArchiveCRef>;
 
 struct Tiling {
-    geo::SrsDefinition srcSrs;
-
     math::Extents3 workExtents;
     geo::SrsDefinition workSrs;
 
