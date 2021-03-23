@@ -146,8 +146,12 @@ void saveManifest(std::ostream &os, const fs::path &path
         }
     }
 
-    os.precision(15);
-    Json::StyledStreamWriter().write(os, mf);
+    {
+        Json::StreamWriterBuilder wb;
+        os.precision(15);
+        std::unique_ptr<Json::StreamWriter> writer(wb.newStreamWriter());
+        writer->write(mf, &os);
+    }
 
     (void) path;
 }
