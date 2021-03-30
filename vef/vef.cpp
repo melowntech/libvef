@@ -178,7 +178,7 @@ ArchiveWriter::ArchiveWriter(const fs::path &root, bool overwrite)
 
 ArchiveWriter::~ArchiveWriter()
 {
-    if (changed_ && !std::uncaught_exception()) {
+    if (changed_ && !std::uncaught_exceptions()) {
         LOG(warn4)
             << "Unflushed VEF archive at " << root_
             << "; all changes made will not be reflected in the storage.";
