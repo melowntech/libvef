@@ -44,3 +44,8 @@ buildsys_library(vef)
 
 target_link_libraries(vef ${MODULE_LIBRARIES})
 buildsys_target_compile_definitions(vef ${MODULE_DEFINITIONS})
+
+# various tools etc.
+if(MODULE_service_FOUND)
+  add_subdirectory(tools EXCLUDE_FROM_ALL)
+endif()
