@@ -44,6 +44,9 @@ struct Tiling {
     math::Extents3 workExtents;
     geo::SrsDefinition workSrs;
 
+    /** Resolution used for tile splitting.
+     */
+    double resolution;
     int maxLod;
 
     Tiling(const Archive &archive

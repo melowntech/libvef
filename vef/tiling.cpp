@@ -440,6 +440,9 @@ Tiling::Tiling(const Archives &archives
 
     maxLod = lodDiff + headLods;
 
+    // store pixel size as resolution
+    this->resolution = pxSize;
+
     LOG(info3)
         << std::fixed
         << "Tiling: maxLod: " << maxLod

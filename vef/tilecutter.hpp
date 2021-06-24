@@ -40,35 +40,47 @@ namespace vef {
 
 /** Cut source meshes to tiles in binomic division. World is specified by
  *  `worldExtents` (i.e. tile 0-0-0). Meshes from archive are converted to world
- *  using provided `ved2world` convertor.
+ *  using provided `vef2world` convertor.
  *
  *  Archive's original data is mapped to `maxLod`.
  *
  *  Tiles are clipped with given tile margin.
  *
  *  Output is stored in the provided temporary tileset.
+ *
+ *  \param lodDepth:
+ *      =0: nothing happens
+ *      >0: only bottom lodDepth lods are processed from the input
+ *      <0: only top -lodDepth lods are processed from the input
  */
 void cutToTiles(vtslibs::vts::tools::TmpTileset &ts
                 , const vef::Archive &archive
                 , const math::Extents2 &worldExtents
                 , const geo::CsConvertor &vef2world
-                , int maxLod, double clipMargin = 1.0 / 128.);
+                , int maxLod, double clipMargin = 1.0 / 128.
+                , int lodDepth = 0);
 
 /** Cut source meshes to tiles in binomic division. World is specified by
  *  `worldExtents` (i.e. tile 0-0-0). Meshes from archive are converted to world
- *  using provided `ved2world` convertor.
+ *  using provided `vef2world` convertor.
  *
  *  Archive's original data is mapped to `maxLod`.
  *
  *  Tiles are clipped with given tile margin.
  *
  *  Output is stored in the provided temporary tileset.
+ *
+ *  \param lodDepth:
+ *      =0: nothing happens
+ *      >0: only bottom lodDepth lods are processed from the input
+ *      <0: only top -lodDepth lods are processed from the input
  */
 void cutToTiles(vtslibs::vts::tools::TmpTileset &ts
                 , const vef::Archive &archive
                 , const math::Extents3 &worldExtents
                 , const geo::CsConvertor &vef2world
-                , int maxLod, double clipMargin = 1.0 / 128.);
+                , int maxLod, double clipMargin = 1.0 / 128.
+                , int lodDepth = 0);
 
 } // namespace vef
 

@@ -64,15 +64,36 @@ struct WindowRecord {
 };
 
 WindowRecord::list windowRecordList(const vef::Archive &archive
-                                    , vts::Lod maxLod)
+                                    , vts::Lod maxLod
+                                    , int lodDepth)
 {
     WindowRecord::list list;
 
     for (const auto &lw : archive.manifest().windows) {
         const auto trafo(vef::windowMatrix(archive.manifest(), lw));
         auto lod(maxLod);
+
+        std::size_t bLod(0);
+        std::size_t eLod(lw.lods.size());
+
+        if (lodDepth > 0) {
+            // >0 -> only first lodDepth lods
+            eLod = std::min(std::size_t(lodDepth), eLod);
+        } else if (lodDepth < 0) {
+            // <0 -> only last lodDepth lods
+            const std::size_t ld(-lodDepth);
+            if (ld < eLod) {
+                bLod = eLod - ld;
+            }
+        }
+
+        std::size_t i(0);
         for (const auto &w : lw.lods) {
-            list.emplace_back(w, lod--, trafo);
+            if ((i >= bLod) && (i < eLod)) {
+                list.emplace_back(w, lod, trafo);
+            }
+            --lod;
+            ++i;
         }
     }
 
@@ -130,13 +151,14 @@ public:
            , const math::Extents2 &worldExtents
            , const math::Extent &verticalExtent
            , const geo::CsConvertor &vef2world
-           , int maxLod, double clipMargin)
+           , int maxLod, double clipMargin
+           , int lodDepth)
         : ts_(ts), archive_(archive)
         , worldExtents_(worldExtents)
         , verticalExtent_(verticalExtent)
         , vef2world_(vef2world)
         , clipMargin_(clipMargin)
-        , windows_(windowRecordList(archive_, maxLod))
+        , windows_(windowRecordList(archive_, maxLod, lodDepth))
         , generated_(), total_(windows_.size())
     {
         LOG(info3) << "Cutting " << archive.path() << " into tiles.";
@@ -384,20 +406,23 @@ void Cutter::tileCut(const vts::TileId &tileId, const vts::Mesh &mesh
 void cutToTiles(tools::TmpTileset &ts, const vef::Archive &archive
                 , const math::Extents2 &worldExtents
                 , const geo::CsConvertor &vef2world
-                , int maxLod, double clipMargin)
+                , int maxLod, double clipMargin
+                , int lodDepth)
 {
-    Cutter(ts, archive, worldExtents, math::extent(worldExtents, 2)
-           , vef2world, maxLod, clipMargin)();
+    Cutter(ts, archive, worldExtents
+           , math::extent(worldExtents, 2), vef2world
+           , maxLod, clipMargin, lodDepth)();
 }
 
 void cutToTiles(tools::TmpTileset &ts, const vef::Archive &archive
                 , const math::Extents3 &worldExtents
                 , const geo::CsConvertor &vef2world
-                , int maxLod, double clipMargin)
+                , int maxLod, double clipMargin
+                , int lodDepth)
 {
     Cutter(ts, archive, math::extents2(worldExtents)
            , math::extent(worldExtents, 2), vef2world
-           , maxLod, clipMargin)();
+           , maxLod, clipMargin, lodDepth)();
 }
 
 } // namespace vef
