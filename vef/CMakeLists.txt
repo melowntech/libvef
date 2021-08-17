@@ -39,6 +39,8 @@ set(vef_SOURCES
   ${vef_EXTRA_SOURCES}
 )
 
+set_source_files_properties(vef.cpp PROPERTIES COMPILE_FLAGS " -Wno-error=deprecated-declarations")
+
 add_library(vef STATIC ${vef_SOURCES})
 buildsys_library(vef)
 
