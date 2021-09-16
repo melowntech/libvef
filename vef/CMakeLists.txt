@@ -15,7 +15,10 @@ endif()
 if(MODULE_roarchive_FOUND AND MODULE_geometry_FOUND)
   message(STATUS "vef: compiling in geometry support")
   list(APPEND vef_EXTRA_DEPENDS geometry)
-  list(APPEND vef_EXTRA_SOURCES tiling.hpp tiling.cpp)
+  list(APPEND vef_EXTRA_SOURCES
+    tiling.hpp tiling.cpp
+    tiling-po.hpp tiling-po.cpp
+    )
 else()
   message(STATUS "vef: compiling without geometry support")
 endif()

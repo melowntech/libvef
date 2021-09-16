@@ -40,6 +40,25 @@ namespace vef {
 using ArchiveCRef = std::reference_wrapper<const Archive>;
 using Archives = std::vector<ArchiveCRef>;
 
+
+struct World {
+    geo::SrsDefinition srs;
+    math::Extents3 extents;
+
+    World() = default;
+
+    World(const geo::SrsDefinition &srs, const math::Extents3 &extents)
+        : srs(srs), extents(extents)
+    {}
+
+    World(const geo::SrsDefinition &srs, const math::Extents2 &extents);
+
+    std::ostream& dump(std::ostream &os,
+                       const std::string &prefix = {}) const;
+};
+
+/** Computed tiling.
+ */
 struct Tiling {
     math::Extents3 workExtents;
     geo::SrsDefinition workSrs;
@@ -52,17 +71,20 @@ struct Tiling {
     Tiling(const Archive &archive
            , const math::Size2 &optimalTextureSize
            , bool for3dCutting = false
-           , const boost::optional<double> &resolution = boost::none);
+           , const boost::optional<double> &resolution = boost::none
+           , const boost::optional<World> &world = boost::none);
 
     Tiling(const Archive::list &archives
            , const math::Size2 &optimalTextureSize
            , bool for3dCutting = false
-           , const boost::optional<double> &resolution = boost::none);
+           , const boost::optional<double> &resolution = boost::none
+           , const boost::optional<World> &world = boost::none);
 
     Tiling(const Archives &archives
            , const math::Size2 &optimalTextureSize
            , bool for3dCutting = false
-           , const boost::optional<double> &resolution = boost::none);
+           , const boost::optional<double> &resolution = boost::none
+           , const boost::optional<World> &world = boost::none);
 
     Tiling(std::ostream &os);
 
@@ -74,16 +96,19 @@ struct Tiling {
 inline Tiling::Tiling(const Archive &archive
                       , const math::Size2 &optimalTextureSize
                       , bool for3dCutting
-                      , const boost::optional<double> &resolution)
-    : Tiling(Archives({std::cref(archive)}), optimalTextureSize, for3dCutting, resolution)
+                      , const boost::optional<double> &resolution
+                      , const boost::optional<World> &world)
+    : Tiling(Archives({std::cref(archive)})
+             , optimalTextureSize, for3dCutting, resolution, world)
 {}
 
 inline Tiling::Tiling(const Archive::list &archives
                       , const math::Size2 &optimalTextureSize
                       , bool for3dCutting
-                      , const boost::optional<double> &resolution)
+                      , const boost::optional<double> &resolution
+                      , const boost::optional<World> &world)
     : Tiling(Archives(archives.begin(), archives.end())
-             , optimalTextureSize, for3dCutting, resolution)
+             , optimalTextureSize, for3dCutting, resolution, world)
 {}
 
 } // namespace vef

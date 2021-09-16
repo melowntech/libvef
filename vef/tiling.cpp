@@ -41,6 +41,23 @@ namespace vef {
 
 namespace {
 
+math::Extents3 makeFullWorldExtents(const math::Extents2 &e2)
+{
+    auto size(math::size(e2));
+    auto halfLength((size.width + size.height) / 4);
+
+    return { e2.ll(0), e2.ll(1), -halfLength
+             , e2.ur(0), e2.ur(1), halfLength };
+}
+
+} // namespace
+
+World::World(const geo::SrsDefinition &srs, const math::Extents2 &extents)
+    : srs(srs), extents(makeFullWorldExtents(extents))
+{}
+
+namespace {
+
 /** Single submesh area
  */
 struct SubMeshArea {
@@ -354,6 +371,28 @@ analyzeMesh(const Archives &archives
     return mp;
 }
 
+MeshParams
+analyzeMesh(const Archives &archives
+            , const geo::SrsDefinition &srs
+            , const boost::optional<double> &resolution = boost::none)
+{
+    // work in given SRS
+    MeshInfo mi;
+    // combine all meshes
+    for (const Archive &archive : archives) {
+        const auto &inSrs(archive.manifest().srs.value());
+        const auto ami(measureMeshes
+                       (archive, geo::CsConvertor(inSrs, srs)));
+        mi.update(ami);
+    }
+
+    MeshParams mp;
+    mp.extents = mi.extents;
+    mp.workSrs = srs;
+    mp.pixelArea = pixelArea(mi.area, resolution);
+    return mp;
+}
+
 math::Extents3 makeExtents(const math::Point3 &center
                            , const math::Size3f &size)
 {
@@ -371,7 +410,8 @@ math::Extents3 makeExtents(const math::Point3 &center
 Tiling::Tiling(const Archives &archives
                , const math::Size2 &optimalTextureSize
                , bool for3dCutting
-               , const boost::optional<double> &resolution)
+               , const boost::optional<double> &resolution
+               , const boost::optional<World> &world)
     : maxLod()
 {
     // sanity checks
@@ -388,70 +428,95 @@ Tiling::Tiling(const Archives &archives
         }
     }
 
-    const auto mp(analyzeMesh(archives, resolution));
+    if (!world) {
+        const auto mp(analyzeMesh(archives, resolution));
 
-    workSrs = mp.workSrs;
+        workSrs = mp.workSrs;
 
-    int depth(0);
-    for (const Archive &archive : archives) {
-        for (const auto &lw : archive.manifest().windows) {
-            const int nd(lw.lods.size());
-            if (nd > depth) { depth = nd; }
+        int depth(0);
+        for (const Archive &archive : archives) {
+            for (const auto &lw : archive.manifest().windows) {
+                const int nd(lw.lods.size());
+                if (nd > depth) { depth = nd; }
+            }
         }
+
+        auto lodDiff(depth - 1);
+
+        // compute area of one pixel (meter^2/pixel)
+        const auto pxSize(std::sqrt(mp.pixelArea));
+
+        const math::Size2f minTileSize
+            (pxSize * optimalTextureSize.width
+             , pxSize * optimalTextureSize.height);
+
+        const math::Size2f maxTileSize
+            (minTileSize.width * (1 << lodDiff)
+             , minTileSize.height * (1 << lodDiff));
+
+        const auto sceneSize(math::size(mp.extents));
+
+        // max tile depth, average of width and height
+        auto maxTileDepth((maxTileSize.width + maxTileSize.height) / 2.0);
+
+        // size of scene in max-tiles (square)
+        auto sizeInTiles
+            (std::max(std::ceil(sceneSize.width / maxTileSize.width)
+                      , std::ceil(sceneSize.height / maxTileSize.height)));
+
+        if (for3dCutting) {
+            sizeInTiles = std::max
+                (sizeInTiles, std::ceil(sceneSize.depth / maxTileDepth));
+        }
+
+        // number of lods needed to add above scene top lod
+        const int headLods(std::ceil(std::log2(sizeInTiles)));
+
+        math::Size3f worldSize
+            ((1 << headLods) * maxTileSize.width
+             , (1 << headLods) * maxTileSize.height
+             , (1 << headLods) * maxTileDepth);
+
+        workExtents = makeExtents(math::center(mp.extents), worldSize);
+
+        maxLod = lodDiff + headLods;
+
+        // store pixel size as resolution
+        this->resolution = pxSize;
+
+        LOG(info3)
+            << std::fixed
+            << "Tiling: maxLod: " << maxLod
+            << ", empty lods: " << headLods
+            << ", extents: " << workExtents
+            << "; calculated from pixel size: " << pxSize
+            << ", VEF archive depth: " << depth
+            << ", and mesh extents: " << mp.extents
+            << ".";
+
+    } else {
+        workExtents = world->extents;
+        workSrs = world->srs;
+
+        // analyze in provided SRS
+        const auto mp(analyzeMesh(archives, workSrs));
+
+        this->resolution = std::sqrt(mp.pixelArea);
+
+        auto optimalTileArea(area(optimalTextureSize) * mp.pixelArea);
+        const auto optimalTileCount(extents2(workExtents).area()
+                                    / optimalTileArea);
+
+        // find best LOD
+        maxLod = 0.5 * std::log2(optimalTileCount);
+
+        LOG(info3)
+            << std::fixed
+            << "Tiling (using provided World definition): maxLod: " << maxLod
+            << ", extents: " << workExtents
+            << "; calculated from pixel size: " << this->resolution
+            << ".";
     }
-
-    auto lodDiff(depth - 1);
-
-    // compute area of one pixel (meter^2/pixel)
-    const auto pxSize(std::sqrt(mp.pixelArea));
-
-    const math::Size2f minTileSize
-        (pxSize * optimalTextureSize.width
-         , pxSize * optimalTextureSize.height);
-
-    const math::Size2f maxTileSize
-        (minTileSize.width * (1 << lodDiff)
-         , minTileSize.height * (1 << lodDiff));
-
-    const auto sceneSize(math::size(mp.extents));
-
-    // max tile depth, average of width and height
-    auto maxTileDepth((maxTileSize.width + maxTileSize.height) / 2.0);
-
-    // size of scene in max-tiles (square)
-    auto sizeInTiles
-        (std::max(std::ceil(sceneSize.width / maxTileSize.width)
-                  , std::ceil(sceneSize.height / maxTileSize.height)));
-
-    if (for3dCutting) {
-        sizeInTiles = std::max
-            (sizeInTiles, std::ceil(sceneSize.depth / maxTileDepth));
-    }
-
-    // number of lods needed to add above scene top lod
-    const int headLods(std::ceil(std::log2(sizeInTiles)));
-
-    math::Size3f worldSize
-        ((1 << headLods) * maxTileSize.width
-         , (1 << headLods) * maxTileSize.height
-         , (1 << headLods) * maxTileDepth);
-
-    workExtents = makeExtents(math::center(mp.extents), worldSize);
-
-    maxLod = lodDiff + headLods;
-
-    // store pixel size as resolution
-    this->resolution = pxSize;
-
-    LOG(info3)
-        << std::fixed
-        << "Tiling: maxLod: " << maxLod
-        << ", empty lods: " << headLods
-        << ", extents: " << workExtents
-        << "; calculated from pixel size: " << pxSize
-        << ", VEF archive depth: " << depth
-        << ", and mesh extents: " << mp.extents
-        << ".";
 }
 
 Tiling::Tiling(std::ostream &os)
