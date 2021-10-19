@@ -150,13 +150,13 @@ public:
     Cutter(tools::TmpTileset &ts, const vef::Archive &archive
            , const math::Extents2 &worldExtents
            , const math::Extent &verticalExtent
-           , const geo::CsConvertor &vef2world
+           , const boost::optional<geo::SrsDefinition> &dstSrs
            , int maxLod, double clipMargin
            , int lodDepth)
         : ts_(ts), archive_(archive)
         , worldExtents_(worldExtents)
         , verticalExtent_(verticalExtent)
-        , vef2world_(vef2world)
+        , dstSrs_(dstSrs)
         , clipMargin_(clipMargin)
         , windows_(windowRecordList(archive_, maxLod, lodDepth))
         , generated_(), total_(windows_.size())
@@ -167,7 +167,7 @@ public:
     void operator()(/**vt::ExternalProgress &progress*/);
 
 private:
-    void windowCut(const WindowRecord &window);
+    void windowCut(const WindowRecord &window, const geo::CsConvertor &conv);
 
     void splitToTiles(vts::Lod lod, const vts::TileRange &tr
                       , const vts::Mesh &mesh
@@ -178,23 +178,33 @@ private:
 
     cv::Mat loadTexture(const fs::path &path) const;
 
+    geo::CsConvertor vef2world() const;
+
     tools::TmpTileset &ts_;
     const vef::Archive &archive_;
     const math::Extents2& worldExtents_;
     const math::Extent& verticalExtent_;
-    const geo::CsConvertor &vef2world_;
+    const boost::optional<geo::SrsDefinition> &dstSrs_;
     const double clipMargin_;
     WindowRecord::list windows_;
     std::atomic<std::size_t> generated_;
     std::size_t total_;
 };
 
+geo::CsConvertor Cutter::vef2world() const
+{
+    if (!dstSrs_) { return {}; }
+    return geo::CsConvertor(archive_.manifest().srs.value(), *dstSrs_);
+}
+
 void Cutter::operator()(/**vt::ExternalProgress &progress*/)
 {
+    boost::optional<geo::CsConvertor> convertor;
     UTILITY_OMP(parallel for schedule(dynamic, 1))
-        for (std::size_t i = 0; i < windows_.size(); ++i) {
-            windowCut(windows_[i]);
-        }
+    for (std::size_t i = 0; i < windows_.size(); ++i) {
+        if (!convertor) { convertor = vef2world(); }
+        windowCut(windows_[i], *convertor);
+    }
 
     ts_.flush();
 }
@@ -273,14 +283,14 @@ vts::TileRange computeTileRange(const math::Extents2 &worldExtents
     return r;
 }
 
-void Cutter::windowCut(const WindowRecord &wr)
+void Cutter::windowCut(const WindowRecord &wr, const geo::CsConvertor &conv)
 {
     const auto &window(*wr.window);
     const auto &wm(window.mesh);
     LOG(info2) << "Cutting window mesh from " << wm.path << ".";
     auto mesh(vts::loadMeshFromObj(*archive_.meshIStream(wm), wm.path));
     transformInPlace(mesh, wr.trafo);
-    warpInPlace(mesh, vef2world_);
+    warpInPlace(mesh, conv);
 
     if (mesh.submeshes.size() != window.atlas.size()) {
         LOGTHROW(err2, std::runtime_error)
@@ -405,23 +415,23 @@ void Cutter::tileCut(const vts::TileId &tileId, const vts::Mesh &mesh
 
 void cutToTiles(tools::TmpTileset &ts, const vef::Archive &archive
                 , const math::Extents2 &worldExtents
-                , const geo::CsConvertor &vef2world
+                , const boost::optional<geo::SrsDefinition> &dstSrs
                 , int maxLod, double clipMargin
                 , int lodDepth)
 {
     Cutter(ts, archive, worldExtents
-           , math::extent(worldExtents, 2), vef2world
+           , math::extent(worldExtents, 2), dstSrs
            , maxLod, clipMargin, lodDepth)();
 }
 
 void cutToTiles(tools::TmpTileset &ts, const vef::Archive &archive
                 , const math::Extents3 &worldExtents
-                , const geo::CsConvertor &vef2world
+                , const boost::optional<geo::SrsDefinition> &dstSrs
                 , int maxLod, double clipMargin
                 , int lodDepth)
 {
     Cutter(ts, archive, math::extents2(worldExtents)
-           , math::extent(worldExtents, 2), vef2world
+           , math::extent(worldExtents, 2), dstSrs
            , maxLod, clipMargin, lodDepth)();
 }
 

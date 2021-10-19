@@ -39,6 +39,7 @@
 
 #include "jsoncpp/json.hpp"
 #include "jsoncpp/as.hpp"
+#include "jsoncpp/io.hpp"
 
 #include "reader.hpp"
 
@@ -146,13 +147,7 @@ Manifest loadManifest(std::istream &in, const fs::path &path
     LOG(info1) << "Loading manifest from " << path  << ".";
 
     // load json
-    Json::Value manifest;
-    Json::Reader reader;
-    if (!reader.parse(in, manifest)) {
-        LOGTHROW(err2, std::runtime_error)
-            << "Unable to parse manifest " << path << ": "
-            << reader.getFormattedErrorMessages() << ".";
-    }
+    auto manifest(Json::read(in, path, "manifest"));
 
     const auto basePath(useLocalPaths
                         ? ""

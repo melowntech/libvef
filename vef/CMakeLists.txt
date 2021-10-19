@@ -1,5 +1,5 @@
 # bump version here
-set(vef_VERSION 1.4)
+set(vef_VERSION 1.6)
 
 set(vef_EXTRA_DEPENDS)
 set(vef_EXTRA_SOURCES)
@@ -15,7 +15,10 @@ endif()
 if(MODULE_roarchive_FOUND AND MODULE_geometry_FOUND)
   message(STATUS "vef: compiling in geometry support")
   list(APPEND vef_EXTRA_DEPENDS geometry)
-  list(APPEND vef_EXTRA_SOURCES tiling.hpp tiling.cpp)
+  list(APPEND vef_EXTRA_SOURCES
+    tiling.hpp tiling.cpp
+    tiling-po.hpp tiling-po.cpp
+    )
 else()
   message(STATUS "vef: compiling without geometry support")
 endif()
@@ -29,7 +32,7 @@ else()
 endif()
 
 define_module(LIBRARY vef=${vef_VERSION}
-  DEPENDS ${vef_EXTRA_DEPENDS} geo>=1.24 math>=1.2 utility>=1.11 dbglog>=1.4
+  DEPENDS ${vef_EXTRA_DEPENDS} geo>=1.35 math>=1.2 utility>=1.11 dbglog>=1.4
   jsoncpp>=1.1
   Boost_FILESYSTEM Boost_IOSTREAMS
   )
@@ -39,7 +42,7 @@ set(vef_SOURCES
   ${vef_EXTRA_SOURCES}
 )
 
-if (NOT WIN32)
+if (NOT MSVC)
   set_source_files_properties(vef.cpp PROPERTIES COMPILE_FLAGS " -Wno-error=deprecated-declarations")
 endif()
 

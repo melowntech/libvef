@@ -56,7 +56,7 @@ namespace vef {
 void cutToTiles(vtslibs::vts::tools::TmpTileset &ts
                 , const vef::Archive &archive
                 , const math::Extents2 &worldExtents
-                , const geo::CsConvertor &vef2world
+                , const boost::optional<geo::SrsDefinition> &dstSrs
                 , int maxLod, double clipMargin = 1.0 / 128.
                 , int lodDepth = 0);
 
@@ -78,7 +78,7 @@ void cutToTiles(vtslibs::vts::tools::TmpTileset &ts
 void cutToTiles(vtslibs::vts::tools::TmpTileset &ts
                 , const vef::Archive &archive
                 , const math::Extents3 &worldExtents
-                , const geo::CsConvertor &vef2world
+                , const boost::optional<geo::SrsDefinition> &dstSrs
                 , int maxLod, double clipMargin = 1.0 / 128.
                 , int lodDepth = 0);
 
