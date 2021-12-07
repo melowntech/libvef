@@ -58,6 +58,42 @@ namespace bio = boost::iostreams;
 
 namespace {
 
+struct Trafo {
+    math::Matrix4 trafo;
+
+    Trafo() : trafo(math::identity4()) {}
+};
+
+std::ostream& operator<<(std::ostream &os, const Trafo &t)
+{
+    std::string sep("");
+    for (int j(0); j < 3; ++j) {
+        for (int i(0); i < 4; ++i) {
+            os << sep << t.trafo(j, i);
+            sep = ",";
+        }
+    }
+    return os;
+}
+
+struct DstTrafo;
+class Convertor;
+
+std::istream& operator>>(std::istream &is, Trafo &t)
+{
+    t.trafo = math::identity4();
+
+    bool comma(false);
+    for (int j(0); j < 3; ++j) {
+        for (int i(0); i < 4; ++i) {
+            if (comma) { is >> utility::expect(','); }
+            comma = true;
+            is >> t.trafo(j, i);
+        }
+    }
+    return is;
+}
+
 class Vef2Vef : public service::Cmdline
 {
 public:
@@ -71,24 +107,35 @@ private:
     virtual void configuration(po::options_description &cmdline
                                , po::options_description &config
                                , po::positional_options_description &pd)
-        UTILITY_OVERRIDE;
+        override;
 
     virtual void configure(const po::variables_map &vars)
-        UTILITY_OVERRIDE;
+        override;
 
     virtual bool help(std::ostream &out, const std::string &what) const
         UTILITY_OVERRIDE;
 
-    virtual int run() UTILITY_OVERRIDE;
+    virtual int run() override;
 
     void convert(const vef::Archive &in, vef::ArchiveWriter &out);
+
+    DstTrafo buildDstTrafo(const vef::Archive &in
+                           , const geo::CsConvertor &conv) const;
+
+    vef::Mesh::Format meshFormat() const {
+        return (noMeshCompression_
+                ? vef::Mesh::Format::obj
+                : vef::Mesh::Format::gzippedObj);
+    }
 
     fs::path input_;
     fs::path output_;
     bool overwrite_ = false;
 
     boost::optional<geo::SrsDefinition> dstSrs_;
+    boost::optional<Trafo> trafo_;
     bool verticalAdjustment_ = false;
+    bool noMeshCompression_ = false;
 };
 
 void Vef2Vef::configuration(po::options_description &cmdline
@@ -110,9 +157,17 @@ void Vef2Vef::configuration(po::options_description &cmdline
 
         ("verticalAdjustment"
          ,  utility::implicit_value(&verticalAdjustment_, true)
-         ->default_value(&verticalAdjustment_)
+         ->default_value(verticalAdjustment_)
          , "Apply vertical adjustment to output data."
          "Dst SRS must be a projected system to apply.")
+
+        ("dstTrafo",  po::value<Trafo>()->implicit_value(Trafo())
+         , "Forces global transformation in out archive.")
+
+        ("noMeshCompression"
+         ,  utility::implicit_value(&noMeshCompression_, true)
+         ->default_value(noMeshCompression_)
+         , "Do not store compressed meshes.")
         ;
 
     pd
@@ -130,13 +185,7 @@ void Vef2Vef::configure(const po::variables_map &vars)
     }
 
     if (verticalAdjustment_) {
-        if (!dstSrs_) {
-            LOGTHROW(err2, std::runtime_error)
-                << "Vertical adjustment makes no sense without "
-                "destination SRS.";
-        }
-
-        if (!geo::isProjected(*dstSrs_)) {
+        if (dstSrs_ && !geo::isProjected(*dstSrs_)) {
             LOGTHROW(err2, std::runtime_error)
                 << "Vertical adjustment makes sense only for "
                 "projected SRS.";
@@ -144,6 +193,12 @@ void Vef2Vef::configure(const po::variables_map &vars)
     }
 
     overwrite_ = vars.count("overwrite");
+
+    if (vars.count("dstTrafo")) {
+        trafo_ = vars["dstTrafo"].as<Trafo>();
+        LOG(info3) << "Using external destination transformation: "
+                   << trafo_;
+    }
 }
 
 bool Vef2Vef::help(std::ostream &out, const std::string &what) const
@@ -336,7 +391,13 @@ void copyWindow(const vef::Archive &in, vef::ArchiveWriter &out
                << " to " << oMesh.path;
     {
         auto is(in.meshIStream(window.mesh));
-        copyGzipped(is->get(), oMesh.path);
+        switch (window.mesh.format) {
+        case vef::Mesh::Format::obj:
+            copy(is->get(), oMesh.path); break;
+
+        case vef::Mesh::Format::gzippedObj:
+            copyGzipped(is->get(), oMesh.path); break;
+        }
         is->close();
     }
 
@@ -397,22 +458,46 @@ void convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
         }
     }
 
-    // save converted mesh
-    geometry::saveAsGzippedObj(loader.mesh, oMesh.path
-                               , oMesh.mtlPath().filename().string());
+    switch (oMesh.format) {
+    case vef::Mesh::Format::obj:
+        geometry::saveAsObj(loader.mesh, oMesh.path
+                            , oMesh.mtlPath().filename().string());
+        break;
+
+    case vef::Mesh::Format::gzippedObj:
+        geometry::saveAsGzippedObj(loader.mesh, oMesh.path
+                                   , oMesh.mtlPath().filename().string());
+        break;
+    }
 
     copyAtlas(in, out, window, oWindowId, oLodId);
+}
+
+
+DstTrafo Vef2Vef::buildDstTrafo(const vef::Archive &in
+                                , const geo::CsConvertor &conv)
+    const
+{
+    if (dstSrs_) {
+        return makeDstTrafo(measure(in, conv));
+    }
+
+    if (trafo_) {
+        return { trafo_->trafo , math::matrixInvert(trafo_->trafo) };
+    }
+
+    return {};
 }
 
 void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
 {
     const auto geoConv(makeConv(*in.manifest().srs, dstSrs_));
-    const auto dstTrafo(makeDstTrafo(measure(in, geoConv)));
+    const auto dstTrafo(buildDstTrafo(in, geoConv));
 
     const geo::VerticalAdjuster verticalAdjuster
         (dstSrs_
-         ? geo::VerticalAdjuster()
-         : geo::VerticalAdjuster(verticalAdjustment_, *dstSrs_));
+         ? geo::VerticalAdjuster(verticalAdjustment_, *dstSrs_)
+         : geo::VerticalAdjuster());
 
     out.setTrafo(dstTrafo.toGeo);
 
@@ -424,9 +509,9 @@ void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
         const auto oWindowId(out.addWindow());
         for (const auto &iLod : iWindow.lods) {
             const auto oLodId(out.addLod(oWindowId, boost::none
-                                         , vef::Mesh::Format::gzippedObj));
+                                         , meshFormat()));
 
-            if (dstSrs_) {
+            if (dstSrs_ || dstTrafo.toGeo) {
                 convertWindow(in, out, iLod, oWindowId, oLodId, conv);
             } else {
                 copyWindow(in, out, iLod, oWindowId, oLodId);
@@ -447,7 +532,11 @@ int Vef2Vef::run()
 
     vef::ArchiveWriter out(output_, overwrite_);
 
-    if (dstSrs_) { out.setSrs(*dstSrs_); }
+    if (dstSrs_) {
+        out.setSrs(*dstSrs_);
+    } else if (in.manifest().srs) {
+        out.setSrs(*in.manifest().srs);
+    }
 
     convert(in, out);
 
