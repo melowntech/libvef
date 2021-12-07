@@ -458,15 +458,41 @@ void convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
         }
     }
 
+    // compute maximum absolute value of vertex coordinates
+    double max(0);
+    for (const auto &v : loader.mesh.vertices) {
+        max = std::max({ max, std::abs(v(0))
+                         , std::abs(v(1)), std::abs(v(2)) });
+    }
+
+    struct StreamSetup : geometry::ObjStreamSetup {
+        bool fixed;
+        StreamSetup(bool fixed) : fixed(fixed) {}
+
+        virtual bool vertex(std::ostream &os) const {
+            if (fixed) {
+                os << std::fixed << std::setprecision(3);
+                return true;
+            }
+            return false;
+        }
+
+        virtual bool tx(std::ostream&) const { return false; }
+    };
+
+    const StreamSetup streamSetup(max > 1e5);
+
     switch (oMesh.format) {
     case vef::Mesh::Format::obj:
         geometry::saveAsObj(loader.mesh, oMesh.path
-                            , oMesh.mtlPath().filename().string());
+                            , oMesh.mtlPath().filename().string()
+                            , streamSetup);
         break;
 
     case vef::Mesh::Format::gzippedObj:
         geometry::saveAsGzippedObj(loader.mesh, oMesh.path
-                                   , oMesh.mtlPath().filename().string());
+                                   , oMesh.mtlPath().filename().string()
+                                   , streamSetup);
         break;
     }
 
