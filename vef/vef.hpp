@@ -84,6 +84,7 @@ struct LoddedWindow {
     boost::filesystem::path path;
     OptionalMatrix trafo;
     Window::list lods;
+    OptionalString name;
 
     LoddedWindow(const boost::filesystem::path &path) : path(path) {}
 };
@@ -106,15 +107,19 @@ class ArchiveWriter {
 public:
     /** Creates new VEF archive. Creation fails if root directory
      *  already exists and overwrite is false.
+     *
+     * \param flat generate flat structure -- one directory per LOD
      */
-    ArchiveWriter(const boost::filesystem::path &root, bool overwrite);
+    ArchiveWriter(const boost::filesystem::path &root, bool overwrite
+                  , bool flat = false);
 
     ~ArchiveWriter();
 
     /** Adds new lodded window collection.
      */
     Id addWindow(const OptionalString &path = boost::none
-                 , const OptionalMatrix &trafo = boost::none);
+                 , const OptionalMatrix &trafo = boost::none
+                 , const OptionalString &name = boost::none);
 
     /** Adds new lod to window.
      *
@@ -158,6 +163,8 @@ private:
     boost::filesystem::path root_;
 
     bool changed_;
+
+    bool flat_;
 
     Manifest manifest_;
 };

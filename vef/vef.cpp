@@ -50,7 +50,7 @@ namespace {
 namespace constants {
 std::string ManifestName(MainFile);
 std::string MeshNameFormat("mesh.%s");
-std::string MtlFileName("mesh.mtl");
+std::string MtlExtension("mtl");
 std::string TextureNameFormat("texture-%d.%s");
 }
 
@@ -116,6 +116,7 @@ void saveManifest(std::ostream &os, const fs::path &path
         const auto windowPath(fs::absolute(window.path, root));
         jwindow["path"] = localPath(windowPath, root);
         saveTrafo(jwindow, window.trafo);
+        if (window.name) { jwindow["name"] = *window.name; }
 
         auto &jlods(jwindow["lods"] = Json::arrayValue);
 
@@ -168,8 +169,9 @@ void saveManifest(const fs::path &path, const Manifest &manifest
 
 } // namespace
 
-ArchiveWriter::ArchiveWriter(const fs::path &root, bool overwrite)
-    : root_(fs::absolute(root)), changed_(false)
+ArchiveWriter::ArchiveWriter(const fs::path &root, bool overwrite
+                             , bool flat)
+    : root_(fs::absolute(root)), changed_(false), flat_(flat)
 {
     if (!create_directories(root_)) {
         // directory already exists -> fail if mode says so
@@ -191,7 +193,11 @@ ArchiveWriter::~ArchiveWriter()
 
 fs::path Mesh::mtlPath() const
 {
-    return path.parent_path() / constants::MtlFileName;
+    const fs::path p(path);
+    const auto ext(asExtension(format));
+    auto fname(p.filename().string());
+    fname = fname.substr(0, fname.size() - ext.size());
+    return p.parent_path() / (fname + constants::MtlExtension);
 }
 
 void ArchiveWriter::flush()
@@ -224,24 +230,47 @@ void ArchiveWriter::flush()
 }
 
 Id ArchiveWriter::addWindow(const OptionalString &path
-                            , const OptionalMatrix &trafo)
+                            , const OptionalMatrix &trafo
+                            , const OptionalString &name)
 {
     changed_ = true;
     auto index(manifest_.windows.size());
-    if (path) {
-        manifest_.windows.emplace_back(fs::absolute(*path, root_));
+
+    if (!flat_) {
+        fs::path wPath;
+        if (path) {
+            wPath = fs::absolute(*path, root_);
+        } else if (name) {
+            wPath = fs::absolute(*name, root_);
+        } else {
+            wPath = root_ / boost::lexical_cast<std::string>(index);
+        }
+
+        manifest_.windows.emplace_back(wPath);
     } else {
-        manifest_.windows.emplace_back
-            (root_ / boost::lexical_cast<std::string>(index));
+        // flat structure: just single window rooted in the root
+        manifest_.windows.emplace_back(root_);
     }
+
     auto &window(manifest_.windows.back());
     window.trafo = trafo;
     create_directories(window.path);
+
+    window.name = name;
+    if (!name) {
+        // get name from path/index if not specified
+        if (path) {
+            window.name = fs::path(*path).filename().string();
+        } else {
+            window.name = boost::lexical_cast<std::string>(index);
+        }
+    }
+
     return index;
 }
 
 Id ArchiveWriter::addLod(Id windowId, const OptionalString &path
-                                 , Mesh::Format meshFormat)
+                         , Mesh::Format meshFormat)
 {
     if (windowId >= manifest_.windows.size()) {
         LOGTHROW(err1, std::logic_error)
@@ -265,10 +294,19 @@ Id ArchiveWriter::addLod(Id windowId, const OptionalString &path
     auto &windowLod(window.lods.back());
     create_directories(windowLod.path);
 
+    std::string meshPath(str(boost::format(constants::MeshNameFormat)
+                             % asExtension(meshFormat)));
+    if (flat_) {
+        if (!window.name) {
+            LOGTHROW(err1, std::logic_error)
+                << "Cannot flatten nameless window " << windowId
+                << ".";
+        }
+        meshPath = *window.name + "-" + meshPath;
+    }
+
     windowLod.mesh.format = meshFormat;
-    windowLod.mesh.path = (windowLod.path /
-                           str(boost::format(constants::MeshNameFormat)
-                               % asExtension(meshFormat)));
+    windowLod.mesh.path = (windowLod.path / meshPath);
 
     return index;
 }
@@ -295,7 +333,7 @@ Mesh& ArchiveWriter::mesh(Id windowId, Id lod)
 }
 
 Texture ArchiveWriter::addTexture(Id windowId, Id lod, const Texture &t
-                                          , Texture::Format format)
+                                  , Texture::Format format)
 {
     if (windowId >= manifest_.windows.size()) {
         LOGTHROW(err1, std::logic_error)
@@ -321,9 +359,20 @@ Texture ArchiveWriter::addTexture(Id windowId, Id lod, const Texture &t
     // set update path and return
     auto &tt(atlas.back());
     tt.format = format;
-    tt.path = (windowLod.path /
-               str(boost::format(constants::TextureNameFormat)
-                   % index % asExtension(format)));
+
+    std::string texturePath(str(boost::format(constants::TextureNameFormat)
+                                % index % asExtension(format)));
+    if (flat_) {
+        if (!window.name) {
+            LOGTHROW(err1, std::logic_error)
+                << "Cannot flatten nameless window " << windowId
+                << ".";
+        }
+        texturePath = *window.name + "-" + texturePath;
+    }
+
+    tt.path = (windowLod.path / texturePath);
+
     return tt;
 }
 

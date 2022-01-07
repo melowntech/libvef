@@ -93,6 +93,8 @@ Manifest parse1(const Json::Value &value, const fs::path &basePath)
 
         loadTrafo(window.trafo, jwindow);
 
+        Json::get(window.name, jwindow, "name");
+
         for (const auto &jlod : Json::check(jwindow["lods"], Json::arrayValue
                                             , "manifest.windows.lods"))
         {

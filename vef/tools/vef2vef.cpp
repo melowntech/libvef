@@ -136,6 +136,9 @@ private:
     boost::optional<Trafo> trafo_;
     bool verticalAdjustment_ = false;
     bool noMeshCompression_ = false;
+    fs::path clipBorder_;
+
+    bool flatten_ = false;
 };
 
 void Vef2Vef::configuration(po::options_description &cmdline
@@ -168,6 +171,15 @@ void Vef2Vef::configuration(po::options_description &cmdline
          ,  utility::implicit_value(&noMeshCompression_, true)
          ->default_value(noMeshCompression_)
          , "Do not store compressed meshes.")
+
+        ("clipBorder", po::value(&clipBorder_)
+         , "Any vector dataset (recognizable by GDAL/ORG) that defines "
+         "one or more polygons that will be used to clip the input meshes.")
+
+        ("flatten"
+         ,  utility::implicit_value(&flatten_, true)
+         ->default_value(flatten_)
+         , "Flatten directory structure to just one directory per LOD.")
         ;
 
     pd
@@ -532,7 +544,13 @@ void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
         Convertor conv(vef::windowMatrix(in.manifest(), iWindow)
                        , geoConv, verticalAdjuster, dstTrafo.fromGeo);
 
-        const auto oWindowId(out.addWindow());
+        vef::OptionalString name(iWindow.name);
+        if (!name) {
+            name = fs::path(iWindow.path).filename().string();
+        }
+
+        const auto oWindowId(out.addWindow
+                             (boost::none, boost::none, name));
         for (const auto &iLod : iWindow.lods) {
             const auto oLodId(out.addLod(oWindowId, boost::none
                                          , meshFormat()));
@@ -556,7 +574,7 @@ int Vef2Vef::run()
         return EXIT_FAILURE;
     }
 
-    vef::ArchiveWriter out(output_, overwrite_);
+    vef::ArchiveWriter out(output_, overwrite_, flatten_);
 
     if (dstSrs_) {
         out.setSrs(*dstSrs_);
