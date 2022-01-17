@@ -136,7 +136,7 @@ private:
     boost::optional<Trafo> trafo_;
     bool verticalAdjustment_ = false;
     bool noMeshCompression_ = false;
-    fs::path clipBorder_;
+    boost::optional<fs::path> clipBorder_;
 
     bool flatten_ = false;
 };
@@ -172,7 +172,7 @@ void Vef2Vef::configuration(po::options_description &cmdline
          ->default_value(noMeshCompression_)
          , "Do not store compressed meshes.")
 
-        ("clipBorder", po::value(&clipBorder_)
+        ("clipBorder", po::value<fs::path>()
          , "Any vector dataset (recognizable by GDAL/ORG) that defines "
          "one or more polygons that will be used to clip the input meshes.")
 
@@ -210,6 +210,10 @@ void Vef2Vef::configure(const po::variables_map &vars)
         trafo_ = vars["dstTrafo"].as<Trafo>();
         LOG(info3) << "Using external destination transformation: "
                    << trafo_;
+    }
+
+    if (vars.count("clipBorder")) {
+        clipBorder_ = vars["clipBorder"].as<fs::path>();
     }
 }
 
