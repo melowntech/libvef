@@ -54,5 +54,9 @@ buildsys_target_compile_definitions(vef ${MODULE_DEFINITIONS})
 
 # various tools etc.
 if(MODULE_service_FOUND)
-  add_subdirectory(tools EXCLUDE_FROM_ALL)
+  if (vef-install_component)
+    add_subdirectory(tools)
+  else()
+    add_subdirectory(tools EXCLUDE_FROM_ALL)
+  endif()
 endif()

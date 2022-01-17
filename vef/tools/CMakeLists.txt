@@ -14,8 +14,7 @@ if(TARGET roarchive)
   buildsys_binary(vef2vef)
 endif()
 
-if(TARGET vef2vef AND vef2vef-install_component)
-  set_property(TARGET vef2vef PROPERTY EXCLUDE_FROM_ALL NO)
+if(TARGET vef2vef AND vef-install_component)
   install(TARGETS vef2vef RUNTIME DESTINATION bin
-    COMPONENT ${vef2vef-install_component})
+    COMPONENT ${vef-install_component})
 endif()
