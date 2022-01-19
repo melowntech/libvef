@@ -96,6 +96,15 @@ Polygons asPolygons(const ::OGRGeometry &g)
     throw; // never reached
 }
 
+void convert(Polygons &polygons, const geo::CsConvertor &conv)
+{
+    for (auto &polygon : polygons) {
+        for (auto &p : polygon) {
+            p = conv(p);
+        }
+    }
+}
+
 } // namespace
 
 Polygons loadPolygons(const boost::filesystem::path &ogrDataset
@@ -127,6 +136,8 @@ Polygons loadPolygons(const boost::filesystem::path &ogrDataset
         auto add(asPolygons(*geometry));
         polygons.insert(polygons.end(), add.begin(), add.end());
     }
+
+    convert(polygons, conv);
 
     return polygons;
 }

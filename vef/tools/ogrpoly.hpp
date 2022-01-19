@@ -7,12 +7,12 @@
 #include <boost/optional.hpp>
 #include <boost/filesystem/path.hpp>
 
-#include "math/geometry_core.hpp"
+#include "math/geometry.hpp"
 
 #include "geo/srsdef.hpp"
 
-using Polygon = std::vector<math::Point2_<double>>;
-using Polygons = std::vector<Polygon>;
+using Polygon = math::Polygon;
+using Polygons = math::MultiPolygon;
 
 Polygons loadPolygons(const boost::filesystem::path &ogrDataset
                       , const geo::SrsDefinition &srs);

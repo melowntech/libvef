@@ -425,6 +425,12 @@ void copyWindow(const vef::Archive &in, vef::ArchiveWriter &out
     copyAtlas(in, out, window, oWindowId, oLodId);
 }
 
+geometry::Mesh clip(geometry::Mesh mesh, const Polygons &polygons)
+{
+    (void) polygons;
+    return mesh;
+}
+
 void convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
                    , const vef::Window &window
                    , vef::Id oWindowId, vef::Id oLodId
@@ -481,7 +487,7 @@ void convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
     }
 
     if (clipBorder) {
-        LOG(info4) << "TODO: clip me!";
+        loader.mesh = clip(loader.mesh, *clipBorder);
     }
 
     // compute maximum absolute value of vertex coordinates
