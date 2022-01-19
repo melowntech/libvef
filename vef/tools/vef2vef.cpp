@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2021 Melown Technologies SE
+ * Copyright (c) 2021-2022 Melown Technologies SE
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -28,6 +28,8 @@
 #include <string>
 #include <iostream>
 
+#include <ogr_api.h>
+
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
 #include <boost/optional/optional_io.hpp>
@@ -51,6 +53,8 @@
 
 #include "vef/vef.hpp"
 #include "vef/reader.hpp"
+
+#include "ogrpoly.hpp"
 
 namespace po = boost::program_options;
 namespace fs = boost::filesystem;
@@ -225,6 +229,7 @@ bool Vef2Vef::help(std::ostream &out, const std::string &what) const
     }
     return false;
 }
+
 
 template <typename Point>
 Point transform(const vef::OptionalMatrix &trafo
@@ -423,7 +428,8 @@ void copyWindow(const vef::Archive &in, vef::ArchiveWriter &out
 void convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
                    , const vef::Window &window
                    , vef::Id oWindowId, vef::Id oLodId
-                   , const Convertor &conv)
+                   , const Convertor &conv
+                   , const boost::optional<Polygons> &clipBorder)
 {
     auto &oMesh(out.mesh(oWindowId, oLodId));
 
@@ -472,6 +478,10 @@ void convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
             LOGTHROW(err2, std::runtime_error)
                 << "Unable to load mesh from " << window.mesh.path << ".";
         }
+    }
+
+    if (clipBorder) {
+        LOG(info4) << "TODO: clip me!";
     }
 
     // compute maximum absolute value of vertex coordinates
@@ -533,6 +543,9 @@ DstTrafo Vef2Vef::buildDstTrafo(const vef::Archive &in
 
 void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
 {
+    const auto clipBorder
+        (loadPolygons(clipBorder_, out.getSrs().value()));
+
     const auto geoConv(makeConv(*in.manifest().srs, dstSrs_));
     const auto dstTrafo(buildDstTrafo(in, geoConv));
 
@@ -559,8 +572,9 @@ void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
             const auto oLodId(out.addLod(oWindowId, boost::none
                                          , meshFormat()));
 
-            if (dstSrs_ || dstTrafo.toGeo) {
-                convertWindow(in, out, iLod, oWindowId, oLodId, conv);
+            if (dstSrs_ || dstTrafo.toGeo || clipBorder) {
+                convertWindow(in, out, iLod, oWindowId, oLodId, conv
+                              , clipBorder);
             } else {
                 copyWindow(in, out, iLod, oWindowId, oLodId);
             }
@@ -597,5 +611,6 @@ int Vef2Vef::run()
 
 int main(int argc, char *argv[])
 {
+    ::OGRRegisterAll();
     return Vef2Vef()(argc, argv);
 }

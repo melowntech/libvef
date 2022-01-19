@@ -382,6 +382,11 @@ void ArchiveWriter::setSrs(const geo::SrsDefinition &srs)
     changed_ = true;
 }
 
+boost::optional<geo::SrsDefinition> ArchiveWriter::getSrs() const
+{
+    return manifest_.srs;
+}
+
 void ArchiveWriter::setTrafo(const OptionalMatrix &trafo)
 {
     manifest_.trafo = trafo;

@@ -6,6 +6,7 @@ if(TARGET roarchive)
   # load tool
   set(vef2vef_SOURCES
     vef2vef.cpp
+    ogrpoly.hpp ogrpoly.cpp
     )
 
   add_executable(vef2vef ${vef2vef_SOURCES})

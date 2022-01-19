@@ -151,6 +151,10 @@ public:
      */
     void setSrs(const geo::SrsDefinition &srs);
 
+    /** Get archive SRS.
+     */
+    boost::optional<geo::SrsDefinition> getSrs() const;
+
     /** Set archive transformation matrix.
      */
     void setTrafo(const OptionalMatrix &trafo);
