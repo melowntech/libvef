@@ -412,7 +412,7 @@ void copyWindow(const vef::Archive &in, vef::ArchiveWriter &out
                << " to " << oMesh.path;
     {
         auto is(in.meshIStream(window.mesh));
-        switch (window.mesh.format) {
+        switch (oMesh.format) {
         case vef::Mesh::Format::obj:
             copy(is->get(), oMesh.path); break;
 
