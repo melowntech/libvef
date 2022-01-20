@@ -256,6 +256,16 @@ public:
         return transform(outTrafo_, adjuster_(conv_(transform(inTrafo_, p))));
     }
 
+    template <typename Point>
+    Point global(const Point &p) const {
+        return adjuster_(conv_(transform(inTrafo_, p)));
+    }
+
+    template <typename Point>
+    Point local(const Point &p) const {
+        return transform(outTrafo_, p);
+    }
+
 private:
     vef::OptionalMatrix inTrafo_;
     geo::CsConvertor conv_;
@@ -442,8 +452,11 @@ void convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
 
         unsigned int imageId = 0;
 
-        ConvertingLoader(const Convertor &conv)
-            : conv(conv)
+        const boost::optional<Polygons> &clipBorder;
+
+        ConvertingLoader(const Convertor &conv
+                         , const boost::optional<Polygons> &clipBorder)
+            : conv(conv), clipBorder(clipBorder)
         {}
 
         void addNormal(const Vector3d&) override {}
@@ -460,28 +473,36 @@ void convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
         }
 
         void addVertex(const Vector3d &v) override {
-            mesh.vertices.push_back(conv(math::Point3(v.x, v.y, v.z)));
+            mesh.vertices.push_back(conv.global(math::Point3(v.x, v.y, v.z)));
         }
 
         void addTexture(const Vector3d &t) override {
             mesh.tCoords.emplace_back(t.x, t.y);
         }
 
-    } loader(conv);
+        void finish() {
+            if (clipBorder) {
+                mesh = geometry::clip(mesh, *clipBorder);
+            }
+
+            for (auto &v : mesh.vertices) {
+                v = conv.local(v);
+            }
+        }
+
+    } loader(conv, clipBorder);
 
     // load and convert mesh
     {
         auto is(in.meshIStream(window.mesh));
         auto res(loader.parse(is->get()));
+        loader.finish();
+
         is->close();
         if (!res) {
             LOGTHROW(err2, std::runtime_error)
                 << "Unable to load mesh from " << window.mesh.path << ".";
         }
-    }
-
-    if (clipBorder) {
-        loader.mesh = geometry::clip(loader.mesh, *clipBorder);
     }
 
     // compute maximum absolute value of vertex coordinates
