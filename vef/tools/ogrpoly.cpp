@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include <gdal_priv.h>
 #include <ogrsf_frmts.h>
 
@@ -32,6 +34,17 @@ VectorDataset openVectorDataset(const std::string &dataset)
                          , [](::GDALDataset *ds) { delete ds; });
 }
 
+void reverse(Polygons &polygons)
+{
+    // reverse all polygons
+    for (auto &p : polygons) {
+        Polygon o;
+        o.resize(p.size());
+        std::copy(p.rbegin(), p.rend(), o.begin());
+        p.swap(o);
+    }
+}
+
 Polygons asPolygons(const ::OGRLineString &g)
 {
     Polygons polygons;
@@ -60,8 +73,18 @@ Polygons asPolygons(const ::OGRLinearRing &g)
 
 Polygons asPolygons(const ::OGRPolygon &g)
 {
-    // ignore holes
-    return asPolygons(**g.begin());
+    Polygons polygons;
+
+    bool first(true);
+    for (const auto &ring : g) {
+        auto add(asPolygons(*ring));
+        if (!first) { reverse(add); }
+
+        polygons.insert(polygons.end(), add.begin(), add.end());
+        first = false;
+    }
+
+    return polygons;
 }
 
 Polygons asPolygons(const ::OGRMultiPolygon &g)

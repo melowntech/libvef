@@ -1,6 +1,6 @@
 if(TARGET roarchive)
   define_module(BINARY vef2vef
-    DEPENDS vef roarchive service
+    DEPENDS vef roarchive service geometry>=1.15
     )
 
   # load tool
