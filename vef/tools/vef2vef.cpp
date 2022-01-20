@@ -141,6 +141,7 @@ private:
     bool verticalAdjustment_ = false;
     bool noMeshCompression_ = false;
     boost::optional<fs::path> clipBorder_;
+    boost::optional<math::Extents2> clipExtents_;
 
     bool flatten_ = false;
 };
@@ -177,8 +178,14 @@ void Vef2Vef::configuration(po::options_description &cmdline
          , "Do not store compressed meshes.")
 
         ("clipBorder", po::value<fs::path>()
-         , "Any vector dataset (recognizable by GDAL/ORG) that defines "
-         "one or more polygons that will be used to clip the input meshes.")
+         , "Any vector dataset (recognizable by GDAL/ORG) that defines"
+         " one or more polygons that will be used to clip the input meshes."
+         " Mutually exclusive with --clipExtents.")
+
+        ("clipExtents", po::value<math::Extents2>()
+         , "Output dataset is clipped to given extents. Must be in"
+         " destination SRS."
+         " Mutually exclusive with --clipBorder.")
 
         ("flatten"
          ,  utility::implicit_value(&flatten_, true)
@@ -217,7 +224,14 @@ void Vef2Vef::configure(const po::variables_map &vars)
     }
 
     if (vars.count("clipBorder")) {
+        if (vars.count("clipExtents")) {
+            LOGTHROW(err2, std::runtime_error)
+                << "Options --clipBorder and --clipExtents cannot be used"
+                " together.";
+        }
         clipBorder_ = vars["clipBorder"].as<fs::path>();
+    } else if (vars.count("clipExtents")) {
+        clipExtents_ = vars["clipExtents"].as<math::Extents2>();
     }
 }
 
@@ -565,7 +579,9 @@ DstTrafo Vef2Vef::buildDstTrafo(const vef::Archive &in
 void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
 {
     const auto clipBorder
-        (loadPolygons(clipBorder_, out.getSrs().value()));
+        (clipBorder_
+         ? loadPolygons(clipBorder_, out.getSrs().value())
+         : polygonsFromExtents(clipExtents_));
 
     const auto geoConv(makeConv(*in.manifest().srs, dstSrs_));
     const auto dstTrafo(buildDstTrafo(in, geoConv));

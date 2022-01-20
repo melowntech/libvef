@@ -21,4 +21,9 @@ boost::optional<Polygons>
 loadPolygons(const boost::optional<boost::filesystem::path> &ogrDataset
              , const geo::SrsDefinition &srs);
 
+Polygons polygonsFromExtents(const math::Extents2 &extents);
+
+boost::optional<Polygons>
+polygonsFromExtents(const boost::optional<math::Extents2> &extents);
+
 #endif // vef2vef_ogrpoly_hpp_included_
