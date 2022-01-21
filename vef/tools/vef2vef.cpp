@@ -449,11 +449,12 @@ void copyWindow(const vef::Archive &in, vef::ArchiveWriter &out
     copyAtlas(in, out, window, oWindowId, oLodId);
 }
 
-void convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
+bool convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
                    , const vef::Window &window
                    , vef::Id oWindowId, vef::Id oLodId
                    , const Convertor &conv
-                   , const boost::optional<Polygons> &clipBorder)
+                   , const boost::optional<Polygons> &clipBorder
+                   , bool saveEmpty)
 {
     auto &oMesh(out.mesh(oWindowId, oLodId));
 
@@ -504,6 +505,10 @@ void convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
             }
         }
 
+        bool empty() const {
+            return mesh.vertices.empty();
+        }
+
     } loader(conv, clipBorder);
 
     // load and convert mesh
@@ -517,6 +522,11 @@ void convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
             LOGTHROW(err2, std::runtime_error)
                 << "Unable to load mesh from " << window.mesh.path << ".";
         }
+    }
+
+    // do not save empty mesh if asked to
+    if (!saveEmpty && loader.empty()) {
+        return false;
     }
 
     // compute maximum absolute value of vertex coordinates
@@ -558,6 +568,8 @@ void convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
     }
 
     copyAtlas(in, out, window, oWindowId, oLodId);
+
+    return true;
 }
 
 
@@ -605,16 +617,26 @@ void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
 
         const auto oWindowId(out.addWindow
                              (boost::none, boost::none, name));
+
+        bool first(true);
         for (const auto &iLod : iWindow.lods) {
             const auto oLodId(out.addLod(oWindowId, boost::none
                                          , meshFormat()));
 
             if (dstSrs_ || dstTrafo.toGeo || clipBorder) {
-                convertWindow(in, out, iLod, oWindowId, oLodId, conv
-                              , clipBorder);
+                if (!convertWindow(in, out, iLod, oWindowId, oLodId, conv
+                                   , clipBorder, !first))
+                {
+                    LOG(info3)
+                        << "Skipping empty window <" << name.value() << ">";
+                    out.deleteWindow(oWindowId);
+                    continue;
+                }
             } else {
                 copyWindow(in, out, iLod, oWindowId, oLodId);
             }
+
+            first = false;
         }
     }
 }

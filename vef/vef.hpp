@@ -121,6 +121,10 @@ public:
                  , const OptionalMatrix &trafo = boost::none
                  , const OptionalString &name = boost::none);
 
+    /** Removes given lodded window collection.
+     */
+    void deleteWindow(Id windowId);
+
     /** Adds new lod to window.
      *
      * \param meshFormat on-disk mesh format

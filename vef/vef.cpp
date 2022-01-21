@@ -269,6 +269,17 @@ Id ArchiveWriter::addWindow(const OptionalString &path
     return index;
 }
 
+void ArchiveWriter::deleteWindow(Id windowId)
+{
+    if (windowId >= manifest_.windows.size()) {
+        LOGTHROW(err1, std::logic_error)
+            << "Cannot remove window: invalid window index " << windowId
+            << ".";
+    }
+
+    manifest_.windows.erase(manifest_.windows.begin() + windowId);
+}
+
 Id ArchiveWriter::addLod(Id windowId, const OptionalString &path
                          , Mesh::Format meshFormat)
 {
