@@ -630,7 +630,7 @@ void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
                     LOG(info3)
                         << "Skipping empty window <" << name.value() << ">";
                     out.deleteWindow(oWindowId);
-                    continue;
+                    break;
                 }
             } else {
                 copyWindow(in, out, iLod, oWindowId, oLodId);
