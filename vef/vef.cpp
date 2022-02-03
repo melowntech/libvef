@@ -35,6 +35,7 @@
 
 #include "utility/streams.hpp"
 #include "utility/path.hpp"
+#include "utility/uncaught-exception.hpp"
 
 #include "jsoncpp/json.hpp"
 #include "jsoncpp/as.hpp"
@@ -184,7 +185,7 @@ ArchiveWriter::ArchiveWriter(const fs::path &root, bool overwrite
 
 ArchiveWriter::~ArchiveWriter()
 {
-    if (changed_ && !std::uncaught_exception()) {
+    if (changed_ && !utility::uncaught_exception()) {
         LOG(warn4)
             << "Unflushed VEF archive at " << root_
             << "; all changes made will not be reflected in the storage.";
