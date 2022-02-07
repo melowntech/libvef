@@ -37,9 +37,9 @@
 #include "dbglog/dbglog.hpp"
 
 #include "service/cmdline.hpp"
-#include "utility/gccversion.hpp"
 #include "utility/buildsys.hpp"
 #include "utility/implicit-value.hpp"
+#include "utility/openmp.hpp"
 
 #include "math/transform.hpp"
 
@@ -116,8 +116,8 @@ private:
     virtual void configure(const po::variables_map &vars)
         override;
 
-    virtual bool help(std::ostream &out, const std::string &what) const
-        UTILITY_OVERRIDE;
+    virtual bool help(std::ostream &out, const std::string &what)
+        const override;
 
     virtual int run() override;
 
