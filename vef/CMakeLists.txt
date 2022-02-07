@@ -32,7 +32,7 @@ else()
 endif()
 
 define_module(LIBRARY vef=${vef_VERSION}
-  DEPENDS ${vef_EXTRA_DEPENDS} geo>=1.35 math>=1.2 utility>=1.11 dbglog>=1.4
+  DEPENDS ${vef_EXTRA_DEPENDS} geo>=1.35 math>=1.2 utility>=1.38 dbglog>=1.4
   jsoncpp>=1.1
   Boost_FILESYSTEM Boost_IOSTREAMS
   )
