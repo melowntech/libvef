@@ -102,9 +102,12 @@ void saveManifest(std::ostream &os, const fs::path &path
 
     saveTrafo(mf, manifest.trafo);
 
-    const auto localPath([](const fs::path &path, const fs::path &root)
+    const auto localPath([](fs::path path, fs::path root)
                          -> std::string
     {
+        if (path.filename() == ".") { path = path.parent_path(); }
+        if (root.filename() == ".") { root = root.parent_path(); }
+
         const auto str(utility::lexically_relative(path, root).string());
         if (str == ".") { return {}; }
         return str;
