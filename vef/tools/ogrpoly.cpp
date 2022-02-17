@@ -13,6 +13,61 @@ namespace {
 
 using VectorDataset = std::shared_ptr< ::GDALDataset>;
 
+inline double ccw(const math::Point2 &a, const math::Point2 &b
+                  , const math::Point2 &c)
+{
+    return (math::crossProduct(math::Point2(math::normalize(b - a))
+                              , math::Point2(math::normalize(c - a)))
+            > 0.0);
+}
+
+bool ccw(const Polygon &p)
+{
+    // whatever
+    if (p.size() < 3) { return true; }
+    if (p.size() == 3) {
+        // triangle
+        return ccw(p[0], p[1], p[2]);
+    }
+
+    // find start point with lowest X-cooridnate; if there are more points with
+    // the same lowerst X-coordinate then find the one with lowest Y-coordinate
+
+    std::size_t a(0), b(0), c(0);
+    auto start(p.front());
+
+    for (std::size_t j(1), ej(p.size()); j != ej; ++j) {
+        const auto &v(p[j]);
+        if ((v(0) < start(0))
+            || ((v(0) == start(0)) && (v(1) < start(1))))
+        {
+            start = v;
+            b = j;
+        }
+    }
+
+    const auto last(p.size() - 1);
+
+    if (b == 0) {
+        a = last;
+        c = 1;
+    } else if (b == last) {
+        if (p.front() == p.back()) {
+            // closed polygon
+            a = b - 1;
+            c = 1;
+        } else {
+            a = b - 1;
+            c = 0;
+        }
+    } else {
+        a = b - 1;
+        c = b + 1;
+    }
+
+    return ccw(p[a], p[b], p[c]);
+}
+
 VectorDataset openVectorDataset(const std::string &dataset)
 {
     auto ds(::GDALOpenEx(dataset.c_str(), (GDAL_OF_VECTOR | GDAL_OF_READONLY)
@@ -34,14 +89,26 @@ VectorDataset openVectorDataset(const std::string &dataset)
                          , [](::GDALDataset *ds) { delete ds; });
 }
 
-void reverse(Polygons &polygons)
+void reverse(Polygon &polygon)
 {
     // reverse all polygons
-    for (auto &p : polygons) {
-        Polygon o;
-        o.resize(p.size());
-        std::copy(p.rbegin(), p.rend(), o.begin());
-        p.swap(o);
+    Polygon o;
+    o.resize(polygon.size());
+    std::copy(polygon.rbegin(), polygon.rend(), o.begin());
+    polygon.swap(o);
+}
+
+void makeCcw(Polygon &polygon)
+{
+    if (!ccw(polygon)) {
+        reverse(polygon);
+    }
+}
+
+void makeCw(Polygon &polygon)
+{
+    if (ccw(polygon)) {
+        reverse(polygon);
     }
 }
 
@@ -54,6 +121,8 @@ Polygons asPolygons(const ::OGRLineString &g)
     for (const auto &p : g) {
         polygon.emplace_back(p.getX(), p.getY());
     }
+
+    makeCcw(polygon);
 
     return polygons;
 }
@@ -75,13 +144,20 @@ Polygons asPolygons(const ::OGRPolygon &g)
 {
     Polygons polygons;
 
-    bool first(true);
     for (const auto &ring : g) {
-        auto add(asPolygons(*ring));
-        if (!first) { reverse(add); }
-
+        const auto add(asPolygons(*ring));
         polygons.insert(polygons.end(), add.begin(), add.end());
-        first = false;
+    }
+
+    if (!polygons.empty()) {
+        // make sure first ring is ccw, rest if cw
+        auto ipolygons(polygons.begin());
+        makeCcw(*ipolygons++);
+        for (auto epolygons(polygons.end()); ipolygons != epolygons;
+             ++ipolygons)
+        {
+            makeCw(*ipolygons);
+        }
     }
 
     return polygons;
