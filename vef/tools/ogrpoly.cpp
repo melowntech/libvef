@@ -181,9 +181,9 @@ Polygons polygonsFromExtents(const math::Extents2 &extents)
     auto &polygon(polygons.back());
 
     polygon.push_back(ll(extents));
-    polygon.push_back(ul(extents));
-    polygon.push_back(ur(extents));
     polygon.push_back(lr(extents));
+    polygon.push_back(ur(extents));
+    polygon.push_back(ul(extents));
     polygon.push_back(ll(extents));
 
     return polygons;
@@ -195,4 +195,3 @@ polygonsFromExtents(const boost::optional<math::Extents2> &extents)
     if (extents) { return polygonsFromExtents(*extents); }
     return boost::none;
 }
-
