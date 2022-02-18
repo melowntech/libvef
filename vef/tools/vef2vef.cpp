@@ -170,7 +170,8 @@ void Vef2Vef::configuration(po::options_description &cmdline
          "Dst SRS must be a projected system to apply.")
 
         ("dstTrafo",  po::value<Trafo>()->implicit_value(Trafo())
-         , "Forces global transformation in out archive.")
+         , "Forces global transformation in the output archive [sets "
+         "localization transformation (global -> local)].")
 
         ("noMeshCompression"
          ,  utility::implicit_value(&noMeshCompression_, true)
@@ -355,6 +356,8 @@ struct DstTrafo {
              , const vef::OptionalMatrix &toGeo = boost::none)
         : fromGeo(fromGeo), toGeo(toGeo)
     {}
+
+    operator bool() const { return bool(toGeo); }
 };
 
 DstTrafo makeDstTrafo(const math::Extents2 &extents)
@@ -577,14 +580,17 @@ DstTrafo Vef2Vef::buildDstTrafo(const vef::Archive &in
                                 , const geo::CsConvertor &conv)
     const
 {
-    if (dstSrs_) {
-        return makeDstTrafo(measure(in, conv));
-    }
-
     if (trafo_) {
+        // dst trafo enforced
         return { trafo_->trafo , math::matrixInvert(trafo_->trafo) };
     }
 
+    if (dstSrs_) {
+        // localize to extents center
+        return makeDstTrafo(measure(in, conv));
+    }
+
+    // no dst trafo
     return {};
 }
 
@@ -603,7 +609,13 @@ void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
          ? geo::VerticalAdjuster(verticalAdjustment_, *dstSrs_)
          : geo::VerticalAdjuster());
 
-    out.setTrafo(dstTrafo.toGeo);
+    if (dstTrafo.toGeo) {
+        // new trafo
+        out.setTrafo(dstTrafo.toGeo);
+    } else {
+        // use input
+        out.setTrafo(in.manifest().trafo);
+    }
 
     const auto &iManifest(in.manifest());
     for (const auto &iWindow : iManifest.windows) {
@@ -615,15 +627,22 @@ void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
             name = fs::path(iWindow.path).filename().string();
         }
 
-        const auto oWindowId(out.addWindow
-                             (boost::none, boost::none, name));
+        const auto oWindowId([&]()
+        {
+            vef::OptionalMatrix trafo;
+            if (!dstTrafo) {
+                // no DST trafo set, use original trafo
+                trafo = iWindow.trafo;
+            }
+            return out.addWindow(boost::none, trafo, name);
+        }());
 
         bool first(true);
         for (const auto &iLod : iWindow.lods) {
             const auto oLodId(out.addLod(oWindowId, boost::none
                                          , meshFormat()));
 
-            if (dstSrs_ || dstTrafo.toGeo || clipBorder) {
+            if (dstSrs_ || dstTrafo || clipBorder) {
                 if (!convertWindow(in, out, iLod, oWindowId, oLodId, conv
                                    , clipBorder, !first))
                 {
