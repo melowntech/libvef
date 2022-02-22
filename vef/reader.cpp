@@ -72,6 +72,24 @@ void loadTrafo(boost::optional<math::Matrix4> &trafo, const Json::Value &obj)
     }
 }
 
+void loadExtents(math::Extents3 &extents, const Json::Value &obj)
+{
+    if (!obj.isMember("extents")) {
+        extents = math::InvalidExtents{};
+        return;
+    }
+
+    const auto &jExtents
+        (Json::check(obj["extents"], Json::arrayValue, "extents"));
+
+    extents.ll(0) = jExtents[0].asDouble();
+    extents.ll(1) = jExtents[1].asDouble();
+    extents.ll(2) = jExtents[2].asDouble();
+    extents.ur(0) = jExtents[3].asDouble();
+    extents.ur(1) = jExtents[4].asDouble();
+    extents.ur(2) = jExtents[5].asDouble();
+}
+
 Manifest parse1(const Json::Value &value, const fs::path &basePath)
 {
     Manifest mf;
@@ -92,6 +110,7 @@ Manifest parse1(const Json::Value &value, const fs::path &basePath)
         auto &window(mf.windows.back());
 
         loadTrafo(window.trafo, jwindow);
+        loadExtents(window.extents, value);
 
         Json::get(window.name, jwindow, "name");
 

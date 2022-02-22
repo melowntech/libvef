@@ -90,6 +90,19 @@ void saveTrafo(Json::Value &obj, const boost::optional<math::Matrix4> &trafo)
     saveTrafo(obj, *trafo);
 }
 
+void saveExtents(Json::Value &obj, const math::Extents3 &extents)
+{
+    if (!math::valid(extents)) { return; }
+
+    auto &jExtents(obj["extents"] = Json::arrayValue);
+    jExtents.append(extents.ll(0));
+    jExtents.append(extents.ll(1));
+    jExtents.append(extents.ll(2));
+    jExtents.append(extents.ur(0));
+    jExtents.append(extents.ur(1));
+    jExtents.append(extents.ur(2));
+}
+
 void saveManifest(std::ostream &os, const fs::path &path
                   , const Manifest &manifest, const fs::path &root)
 {
@@ -121,6 +134,7 @@ void saveManifest(std::ostream &os, const fs::path &path
         jwindow["path"] = localPath(windowPath, root);
         saveTrafo(jwindow, window.trafo);
         if (window.name) { jwindow["name"] = *window.name; }
+        saveExtents(jwindow, window.extents);
 
         auto &jlods(jwindow["lods"] = Json::arrayValue);
 
@@ -406,6 +420,18 @@ void ArchiveWriter::setTrafo(const OptionalMatrix &trafo)
 {
     manifest_.trafo = trafo;
     changed_ = true;
+}
+
+void ArchiveWriter::setExtents(Id windowId, const math::Extents3 &extents)
+{
+    if (windowId >= manifest_.windows.size()) {
+        LOGTHROW(err1, std::logic_error)
+            << "Cannot add texture to window: invalid window index "
+            << windowId << ".";
+    }
+
+    auto &window(manifest_.windows[windowId]);
+    window.extents = extents;
 }
 
 OptionalMatrix windowMatrix(const Manifest &manifest

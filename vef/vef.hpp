@@ -42,8 +42,8 @@ namespace vef {
 
 const std::string MainFile("manifest.json");
 
-typedef boost::optional<std::string> OptionalString;
-typedef boost::optional<math::Matrix4> OptionalMatrix;
+using OptionalString = boost::optional<std::string>;
+using OptionalMatrix = boost::optional<math::Matrix4>;
 
 struct Texture {
     typedef std::vector<Texture> list;
@@ -85,6 +85,8 @@ struct LoddedWindow {
     OptionalMatrix trafo;
     Window::list lods;
     OptionalString name;
+
+    math::Extents3 extents = math::Extents3(math::InvalidExtents{});
 
     LoddedWindow(const boost::filesystem::path &path) : path(path) {}
 };
@@ -162,6 +164,10 @@ public:
     /** Set archive transformation matrix.
      */
     void setTrafo(const OptionalMatrix &trafo);
+
+    /** Set lodded window's extents
+     */
+    void setExtents(Id windowId, const math::Extents3 &extents);
 
     /** Flush pending changes to storage.
      */
