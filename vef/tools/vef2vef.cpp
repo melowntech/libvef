@@ -473,6 +473,8 @@ bool convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
 
         const boost::optional<Polygons> &clipBorder;
 
+        math::Extents3 extents = math::Extents3(math::InvalidExtents{});
+
         ConvertingLoader(const Convertor &conv
                          , const boost::optional<Polygons> &clipBorder)
             : conv(conv), clipBorder(clipBorder)
@@ -504,6 +506,9 @@ bool convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
                 mesh = geometry::clip(mesh, *clipBorder);
             }
 
+            // compute extents in destination global coordinate system
+            extents = computeExtents(mesh.vertices);
+
             for (auto &v : mesh.vertices) {
                 v = conv.local(v);
             }
@@ -533,16 +538,15 @@ bool convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
         return false;
     }
 
-    // compute extents and maximum absolute value of vertex coordinates
-    extents = math::computeExtents(loader.mesh.vertices);
-    const auto max(std::max({
-                             std::abs(extents.ll(0))
-                             , std::abs(extents.ll(1))
-                             , std::abs(extents.ll(2))
-                             , std::abs(extents.ur(0))
-                             , std::abs(extents.ur(1))
-                             , std::abs(extents.ur(2))
-            }));
+    // grab computed extents
+    extents = loader.extents;
+
+    // compute maximum absolute value of vertex coordinates
+    double max(0);
+    for (const auto &v : loader.mesh.vertices) {
+        max = std::max({ max, std::abs(v(0))
+                         , std::abs(v(1)), std::abs(v(2)) });
+    }
 
     struct StreamSetup : geometry::ObjStreamSetup {
         bool fixed;
@@ -599,6 +603,47 @@ DstTrafo Vef2Vef::buildDstTrafo(const vef::Archive &in
     return {};
 }
 
+bool checkExtents(const geo::CsConvertor &conv, const math::Extents2 &extents
+                  , const boost::optional<Polygons> &clipBorder)
+{
+    // clipping and valid extents? no -> cannot tell
+    if (!(clipBorder && math::valid(extents))) { return true; }
+
+    // 10x10 grid
+    const math::Size2 grid(10, 10);
+
+    geometry::Mesh mesh;
+
+    const auto origin(extents.ll);
+    auto size(math::size(extents));
+
+    size.width /= grid.width;
+    size.height /= grid.height;
+
+    // generate vertex grid in destination SRS
+    {
+        math::Point2 p;
+        for (int j(0); j < grid.height; ++j) {
+            p(1) = origin(1) + size.height * j;
+            for (int i(0); i < grid.width; ++i) {
+                p(0) = origin(0) + size.width * i;
+                mesh.vertices.push_back(conv(p));
+            }
+        }
+    }
+
+    // TODO: add faces
+
+    // try to clip
+    const auto clipped(geometry::clip(mesh, *clipBorder));
+
+    // FIXME: remove
+    return true;
+
+    // valid only if there was anything inside the clip region
+    return !clipped.faces.empty();
+}
+
 void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
 {
     const auto clipBorder
@@ -622,14 +667,34 @@ void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
         out.setTrafo(in.manifest().trafo);
     }
 
+    // windows to delete -- we cannot delete windows due to OpenMP
+    vef::Ids windowsToDelete;
+
     const auto &iManifest(in.manifest());
-    for (const auto &iWindow : iManifest.windows) {
+
+    // make room for input window
+    out.expectWindows(iManifest.windows.size());
+
+    UTILITY_OMP(parallel for schedule(dynamic))
+    for (std::size_t wi = 0; wi < iManifest.windows.size(); ++wi) {
+        const auto &iWindow(iManifest.windows[wi]);
+
         Convertor conv(vef::windowMatrix(in.manifest(), iWindow)
                        , geoConv, verticalAdjuster, dstTrafo.fromGeo);
 
         vef::OptionalString name(iWindow.name);
         if (!name) {
             name = fs::path(iWindow.path).filename().string();
+        }
+
+        // check window extents clipping first
+        if (!checkExtents(geoConv, math::extents2(iWindow.extents)
+                          , clipBorder))
+        {
+            LOG(info3)
+                << "Skipping empty window <" << name.value()
+                << "> (based on window extents)";
+            continue;
         }
 
         const auto oWindowId([&]()
@@ -639,22 +704,27 @@ void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
                 // no DST trafo set, use original trafo
                 trafo = iWindow.trafo;
             }
-            return out.addWindow(boost::none, trafo, name);
+
+            vef::Id id;
+            UTILITY_OMP(critical(vef2vef_convert_addWindow))
+            id = out.addWindow(boost::none, trafo, name);
+            return id;
         }());
 
         bool first(true);
-        bool scratched(false);
+        bool abandon(false);
         math::Extents3 combinedExtents(math::InvalidExtents{});
         for (const auto &iLod : iWindow.lods) {
-            const auto oLodId(out.addLod(oWindowId, boost::none
-                                         , meshFormat()));
+            vef::Id oLodId;
+            oLodId = out.addLod(oWindowId, boost::none, meshFormat());
+
             math::Extents3 extents;
 
             if (dstSrs_ || dstTrafo || clipBorder) {
                 if (!convertWindow(in, out, iLod, oWindowId, oLodId, conv
                                    , clipBorder, !first, extents))
                 {
-                    scratched = true;
+                    abandon = true;
                     break;
                 }
             } else {
@@ -667,14 +737,23 @@ void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
             first = false;
         }
 
-        if (scratched) {
+        if (abandon) {
             LOG(info3)
                 << "Skipping empty window <" << name.value() << ">";
-            out.deleteWindow(oWindowId);
+            UTILITY_OMP(critical(vef2vef_convert_deleteWindow))
+            windowsToDelete.push_back(oWindowId);
         } else {
             out.setExtents(oWindowId, combinedExtents);
         }
     }
+
+    std::sort(windowsToDelete.begin(), windowsToDelete.end()
+              , std::greater<vef::Id>());
+
+    for (const auto windowId : windowsToDelete) {
+        out.deleteWindow(windowId);
+    }
+
 }
 
 int Vef2Vef::run()

@@ -434,6 +434,11 @@ void ArchiveWriter::setExtents(Id windowId, const math::Extents3 &extents)
     window.extents = extents;
 }
 
+void ArchiveWriter::expectWindows(std::size_t size)
+{
+    manifest_.windows.reserve(std::max(manifest_.windows.capacity(), size));
+}
+
 OptionalMatrix windowMatrix(const Manifest &manifest
                              , const LoddedWindow &window)
 {

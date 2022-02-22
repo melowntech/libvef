@@ -101,7 +101,8 @@ struct Manifest {
 OptionalMatrix windowMatrix(const Manifest &manifest
                             , const LoddedWindow &window);
 
-typedef std::size_t Id;
+using Id = std::size_t;
+using Ids = std::vector<Id>;
 
 /** VEF archive writer
  */
@@ -168,6 +169,10 @@ public:
     /** Set lodded window's extents
      */
     void setExtents(Id windowId, const math::Extents3 &extents);
+
+    /** Expect given number of windows
+     */
+    void expectWindows(std::size_t size);
 
     /** Flush pending changes to storage.
      */
