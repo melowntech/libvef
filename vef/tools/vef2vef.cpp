@@ -457,7 +457,8 @@ bool convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
                    , vef::Id oWindowId, vef::Id oLodId
                    , const Convertor &conv
                    , const boost::optional<Polygons> &clipBorder
-                   , bool saveEmpty)
+                   , bool saveEmpty
+                   , math::Extents3 &extents)
 {
     auto &oMesh(out.mesh(oWindowId, oLodId));
 
@@ -532,12 +533,16 @@ bool convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
         return false;
     }
 
-    // compute maximum absolute value of vertex coordinates
-    double max(0);
-    for (const auto &v : loader.mesh.vertices) {
-        max = std::max({ max, std::abs(v(0))
-                         , std::abs(v(1)), std::abs(v(2)) });
-    }
+    // compute extents and maximum absolute value of vertex coordinates
+    extents = math::computeExtents(loader.mesh.vertices);
+    const auto max(std::max({
+                             std::abs(extents.ll(0))
+                             , std::abs(extents.ll(1))
+                             , std::abs(extents.ll(2))
+                             , std::abs(extents.ur(0))
+                             , std::abs(extents.ur(1))
+                             , std::abs(extents.ur(2))
+            }));
 
     struct StreamSetup : geometry::ObjStreamSetup {
         bool fixed;
@@ -638,24 +643,36 @@ void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
         }());
 
         bool first(true);
+        bool scratched(false);
+        math::Extents3 combinedExtents(math::InvalidExtents{});
         for (const auto &iLod : iWindow.lods) {
             const auto oLodId(out.addLod(oWindowId, boost::none
                                          , meshFormat()));
+            math::Extents3 extents;
 
             if (dstSrs_ || dstTrafo || clipBorder) {
                 if (!convertWindow(in, out, iLod, oWindowId, oLodId, conv
-                                   , clipBorder, !first))
+                                   , clipBorder, !first, extents))
                 {
-                    LOG(info3)
-                        << "Skipping empty window <" << name.value() << ">";
-                    out.deleteWindow(oWindowId);
+                    scratched = true;
                     break;
                 }
             } else {
                 copyWindow(in, out, iLod, oWindowId, oLodId);
             }
 
+            // update whole window extents
+            math::update(combinedExtents, extents);
+
             first = false;
+        }
+
+        if (scratched) {
+            LOG(info3)
+                << "Skipping empty window <" << name.value() << ">";
+            out.deleteWindow(oWindowId);
+        } else {
+            out.setExtents(oWindowId, combinedExtents);
         }
     }
 }
