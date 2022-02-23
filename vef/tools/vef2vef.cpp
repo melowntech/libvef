@@ -40,6 +40,7 @@
 #include "utility/buildsys.hpp"
 #include "utility/implicit-value.hpp"
 #include "utility/openmp.hpp"
+#include "utility/format.hpp"
 
 #include "math/transform.hpp"
 
@@ -560,7 +561,11 @@ bool convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
             return false;
         }
 
-        virtual bool tx(std::ostream&) const { return false; }
+        virtual bool tx(std::ostream &os) const {
+            os.setf(std::ios::scientific, std::ios::floatfield);
+            os.precision(6);
+            return true;
+        }
     };
 
     const StreamSetup streamSetup(max > 1e5);
@@ -603,16 +608,18 @@ DstTrafo Vef2Vef::buildDstTrafo(const vef::Archive &in
     return {};
 }
 
-bool checkExtents(const geo::CsConvertor &conv, const math::Extents2 &extents
+bool checkExtents(const geo::CsConvertor &conv, const math::Extents3 &e3
                   , const boost::optional<Polygons> &clipBorder)
 {
     // clipping and valid extents? no -> cannot tell
-    if (!(clipBorder && math::valid(extents))) { return true; }
+    if (!(clipBorder && math::valid(e3))) { return true; }
 
-    // 10x10 grid
+    // NxM segments, (N+1)x(M+1) vertices
     const math::Size2 grid(10, 10);
 
     geometry::Mesh mesh;
+
+    const auto extents(math::extents2(e3));
 
     const auto origin(extents.ll);
     auto size(math::size(extents));
@@ -622,23 +629,30 @@ bool checkExtents(const geo::CsConvertor &conv, const math::Extents2 &extents
 
     // generate vertex grid in destination SRS
     {
-        math::Point2 p;
-        for (int j(0); j < grid.height; ++j) {
+        math::Point3 p(0, 0, math::center(e3)(2));
+        for (int j(0); j <= grid.height; ++j) {
             p(1) = origin(1) + size.height * j;
-            for (int i(0); i < grid.width; ++i) {
+            for (int i(0); i <= grid.width; ++i) {
                 p(0) = origin(0) + size.width * i;
                 mesh.vertices.push_back(conv(p));
             }
         }
     }
 
-    // TODO: add faces
+    // generate faces
+    {
+        const int w(grid.width + 1);
+        for (int j(0); j < grid.height; ++j) {
+            int v(w * j);
+            for (int i(0); i < grid.width; ++i, ++v) {
+                mesh.faces.emplace_back(v, v + 1, v + w);
+                mesh.faces.emplace_back(v + w, v + 1, v + w + 1);
+            }
+        }
+    }
 
     // try to clip
     const auto clipped(geometry::clip(mesh, *clipBorder));
-
-    // FIXME: remove
-    return true;
 
     // valid only if there was anything inside the clip region
     return !clipped.faces.empty();
@@ -688,8 +702,7 @@ void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
         }
 
         // check window extents clipping first
-        if (!checkExtents(geoConv, math::extents2(iWindow.extents)
-                          , clipBorder))
+        if (!checkExtents(geoConv, iWindow.extents, clipBorder))
         {
             LOG(info3)
                 << "Skipping empty window <" << name.value()

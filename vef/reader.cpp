@@ -110,7 +110,7 @@ Manifest parse1(const Json::Value &value, const fs::path &basePath)
         auto &window(mf.windows.back());
 
         loadTrafo(window.trafo, jwindow);
-        loadExtents(window.extents, value);
+        loadExtents(window.extents, jwindow);
 
         Json::get(window.name, jwindow, "name");
 
