@@ -232,32 +232,41 @@ MeshInfo measureMesh(const Archive &archive, const Mesh &mesh
 }
 
 MeshInfo measureMeshes(const Archive &archive
-                       , const geo::CsConvertor &conv = geo::CsConvertor())
+                       , const geo::CsConvertor &inConv = geo::CsConvertor())
 {
     MeshInfo mi;
 
     const auto &windows(archive.manifest().windows);
 
-    UTILITY_OMP(parallel for)
-    for (std::size_t i = 0; i < windows.size(); ++i) {
-        const auto &lWindows(windows[i]);
-        const auto &window(lWindows.lods.front());
+    // OpenMP magic: create an empty CS conv and tell OpenMP to create a private
+    // instance for each thread
+    geo::CsConvertor conv;
+    UTILITY_OMP(parallel private(conv))
+    {
+        // clone input cs to the local cs conv
+        conv = inConv.clone();
 
-        auto a(measureMesh(archive, window.mesh
-                           , windowMatrix(archive.manifest(), lWindows)
-                           , conv));
+        UTILITY_OMP(parallel for)
+        for (std::size_t i = 0; i < windows.size(); ++i) {
+            const auto &lWindows(windows[i]);
+            const auto &window(lWindows.lods.front());
 
-        // expand texture area
-        auto iatlas(window.atlas.begin());
-        for (auto &sm : a.area.submeshes) {
-            // expand by texture size
-            const auto &size((*iatlas++).size);
-            sm.texture *= size.width;
-            sm.texture *= size.height;
+            auto a(measureMesh(archive, window.mesh
+                               , windowMatrix(archive.manifest(), lWindows)
+                               , conv));
+
+            // expand texture area
+            auto iatlas(window.atlas.begin());
+            for (auto &sm : a.area.submeshes) {
+                // expand by texture size
+                const auto &size((*iatlas++).size);
+                sm.texture *= size.width;
+                sm.texture *= size.height;
+            }
+
+            UTILITY_OMP(critical(vef23dtiles_measureMeshes_1))
+                mi.update(a);
         }
-
-        UTILITY_OMP(critical(vef23dtiles_measureMeshes_1))
-            mi.update(a);
     }
     return mi;
 }
