@@ -668,11 +668,6 @@ void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
     const auto geoConv(makeConv(*in.manifest().srs, dstSrs_));
     const auto dstTrafo(buildDstTrafo(in, geoConv));
 
-    const geo::VerticalAdjuster verticalAdjuster
-        (dstSrs_
-         ? geo::VerticalAdjuster(verticalAdjustment_, *dstSrs_)
-         : geo::VerticalAdjuster());
-
     if (dstTrafo.toGeo) {
         // new trafo
         out.setTrafo(dstTrafo.toGeo);
@@ -689,74 +684,84 @@ void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
     // make room for input window
     out.expectWindows(iManifest.windows.size());
 
-    UTILITY_OMP(parallel for schedule(dynamic))
-    for (std::size_t wi = 0; wi < iManifest.windows.size(); ++wi) {
-        const auto &iWindow(iManifest.windows[wi]);
+    UTILITY_OMP(parallel)
+    {
+        const auto gc(geoConv.clone());
 
-        Convertor conv(vef::windowMatrix(in.manifest(), iWindow)
-                       , geoConv, verticalAdjuster, dstTrafo.fromGeo);
+        const geo::VerticalAdjuster verticalAdjuster
+            (dstSrs_
+             ? geo::VerticalAdjuster(verticalAdjustment_, *dstSrs_)
+             : geo::VerticalAdjuster());
 
-        vef::OptionalString name(iWindow.name);
-        if (!name) {
-            name = fs::path(iWindow.path).filename().string();
-        }
+        UTILITY_OMP(for schedule(dynamic))
+        for (std::size_t wi = 0; wi < iManifest.windows.size(); ++wi) {
+            const auto &iWindow(iManifest.windows[wi]);
 
-        // check window extents clipping first
-        if (!checkExtents(geoConv, iWindow.extents, clipBorder))
-        {
-            LOG(info3)
-                << "Skipping empty window <" << name.value()
-                << "> (based on window extents)";
-            continue;
-        }
+            Convertor conv(vef::windowMatrix(in.manifest(), iWindow)
+                           , gc, verticalAdjuster, dstTrafo.fromGeo);
 
-        const auto oWindowId([&]()
-        {
-            vef::OptionalMatrix trafo;
-            if (!dstTrafo) {
-                // no DST trafo set, use original trafo
-                trafo = iWindow.trafo;
+            vef::OptionalString name(iWindow.name);
+            if (!name) {
+                name = fs::path(iWindow.path).filename().string();
             }
 
-            vef::Id id;
-            UTILITY_OMP(critical(vef2vef_convert_addWindow))
-            id = out.addWindow(boost::none, trafo, name);
-            return id;
-        }());
+            // check window extents clipping first
+            if (!checkExtents(gc, iWindow.extents, clipBorder))
+            {
+                LOG(info3)
+                    << "Skipping empty window <" << name.value()
+                    << "> (based on window extents)";
+                continue;
+            }
 
-        bool first(true);
-        bool abandon(false);
-        math::Extents3 combinedExtents(math::InvalidExtents{});
-        for (const auto &iLod : iWindow.lods) {
-            vef::Id oLodId;
-            oLodId = out.addLod(oWindowId, boost::none, meshFormat());
-
-            math::Extents3 extents;
-
-            if (dstSrs_ || dstTrafo || clipBorder) {
-                if (!convertWindow(in, out, iLod, oWindowId, oLodId, conv
-                                   , clipBorder, !first, extents))
-                {
-                    abandon = true;
-                    break;
+            const auto oWindowId([&]()
+            {
+                vef::OptionalMatrix trafo;
+                if (!dstTrafo) {
+                    // no DST trafo set, use original trafo
+                    trafo = iWindow.trafo;
                 }
-            } else {
-                copyWindow(in, out, iLod, oWindowId, oLodId);
+
+                vef::Id id;
+                UTILITY_OMP(critical(vef2vef_convert_addWindow))
+                    id = out.addWindow(boost::none, trafo, name);
+                return id;
+            }());
+
+            bool first(true);
+            bool abandon(false);
+            math::Extents3 combinedExtents(math::InvalidExtents{});
+            for (const auto &iLod : iWindow.lods) {
+                vef::Id oLodId;
+                oLodId = out.addLod(oWindowId, boost::none, meshFormat());
+
+                math::Extents3 extents;
+
+                if (dstSrs_ || dstTrafo || clipBorder) {
+                    if (!convertWindow(in, out, iLod, oWindowId, oLodId, conv
+                                       , clipBorder, !first, extents))
+                    {
+                        abandon = true;
+                        break;
+                    }
+                } else {
+                    copyWindow(in, out, iLod, oWindowId, oLodId);
+                }
+
+                // update whole window extents
+                math::update(combinedExtents, extents);
+
+                first = false;
             }
 
-            // update whole window extents
-            math::update(combinedExtents, extents);
-
-            first = false;
-        }
-
-        if (abandon) {
-            LOG(info3)
-                << "Skipping empty window <" << name.value() << ">";
-            UTILITY_OMP(critical(vef2vef_convert_deleteWindow))
-            windowsToDelete.push_back(oWindowId);
-        } else {
-            out.setExtents(oWindowId, combinedExtents);
+            if (abandon) {
+                LOG(info3)
+                    << "Skipping empty window <" << name.value() << ">";
+                UTILITY_OMP(critical(vef2vef_convert_deleteWindow))
+                    windowsToDelete.push_back(oWindowId);
+            } else {
+                out.setExtents(oWindowId, combinedExtents);
+            }
         }
     }
 
