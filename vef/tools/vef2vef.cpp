@@ -608,6 +608,13 @@ DstTrafo Vef2Vef::buildDstTrafo(const vef::Archive &in
     return {};
 }
 
+DstTrafo chooseTrafo(const DstTrafo &t1, const vef::OptionalMatrix &t2)
+{
+    if (t1) { return t1; }
+    if (t2) { return { math::matrixInvert(*t2), *t2 }; }
+    return {};
+}
+
 bool checkExtents(const geo::CsConvertor &conv, const math::Extents3 &e3
                   , const boost::optional<Polygons> &clipBorder)
 {
@@ -668,13 +675,10 @@ void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
     const auto geoConv(makeConv(*in.manifest().srs, dstSrs_));
     const auto dstTrafo(buildDstTrafo(in, geoConv));
 
-    if (dstTrafo.toGeo) {
-        // new trafo
-        out.setTrafo(dstTrafo.toGeo);
-    } else {
-        // use input
-        out.setTrafo(in.manifest().trafo);
-    }
+    // use new trafo or reuse existing?
+    const auto useDstTrafo(chooseTrafo(dstTrafo, in.manifest().trafo));
+
+    out.setTrafo(useDstTrafo.toGeo);
 
     // windows to delete -- we cannot delete windows due to OpenMP
     vef::Ids windowsToDelete;
@@ -698,7 +702,7 @@ void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
             const auto &iWindow(iManifest.windows[wi]);
 
             Convertor conv(vef::windowMatrix(in.manifest(), iWindow)
-                           , gc, verticalAdjuster, dstTrafo.fromGeo);
+                           , gc, verticalAdjuster, useDstTrafo.fromGeo);
 
             vef::OptionalString name(iWindow.name);
             if (!name) {
