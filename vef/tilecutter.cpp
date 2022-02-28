@@ -200,10 +200,13 @@ geo::CsConvertor Cutter::vef2world() const
 void Cutter::operator()(/**vt::ExternalProgress &progress*/)
 {
     boost::optional<geo::CsConvertor> convertor;
-    UTILITY_OMP(parallel for schedule(dynamic, 1))
-    for (std::size_t i = 0; i < windows_.size(); ++i) {
-        if (!convertor) { convertor = vef2world(); }
-        windowCut(windows_[i], *convertor);
+    UTILITY_OMP(parallel)
+    {
+        const auto convertor(vef2world());
+        UTILITY_OMP(for schedule(dynamic, 1))
+        for (std::size_t i = 0; i < windows_.size(); ++i) {
+            windowCut(windows_[i], convertor);
+        }
     }
 
     ts_.flush();
