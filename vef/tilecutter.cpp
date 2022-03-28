@@ -204,7 +204,7 @@ void Cutter::operator()(/**vt::ExternalProgress &progress*/)
     {
         const auto convertor(vef2world());
         UTILITY_OMP(for schedule(dynamic, 1))
-        for (std::size_t i = 0; i < windows_.size(); ++i) {
+        for (std::int64_t i = 0; i < (std::int64_t)windows_.size(); ++i) {
             windowCut(windows_[i], convertor);
         }
     }
