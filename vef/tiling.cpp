@@ -247,7 +247,7 @@ MeshInfo measureMeshes(const Archive &archive
         conv = inConv.clone();
 
         UTILITY_OMP(parallel for shared(windows))
-        for (std::int64_t i = 0; i < (std::int64_t)windows.size(); ++i) {
+        for (std::int64_t i = 0; i < std::int64_t(windows.size()); ++i) {
             const auto &lWindows(windows[i]);
             const auto &window(lWindows.lods.front());
 
