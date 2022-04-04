@@ -437,20 +437,22 @@ Tiling::Tiling(const Archives &archives
         }
     }
 
-    if (!world) {
-        const auto mp(analyzeMesh(archives, resolution));
+    int depth(0);
+    for (const Archive &archive : archives) {
+        for (const auto &lw : archive.manifest().windows) {
+            const int nd(lw.lods.size());
+            if (nd > depth) { depth = nd; }
+        }
+    }
+
+    auto lodDiff(depth - 1);
+
+    if (!world || !math::valid(world->extents)) {
+        const auto mp(world
+                      ? analyzeMesh(archives, world->srs, resolution)
+                      : analyzeMesh(archives, resolution));
 
         workSrs = mp.workSrs;
-
-        int depth(0);
-        for (const Archive &archive : archives) {
-            for (const auto &lw : archive.manifest().windows) {
-                const int nd(lw.lods.size());
-                if (nd > depth) { depth = nd; }
-            }
-        }
-
-        auto lodDiff(depth - 1);
 
         // compute area of one pixel (meter^2/pixel)
         const auto pxSize(std::sqrt(mp.pixelArea));
@@ -504,11 +506,12 @@ Tiling::Tiling(const Archives &archives
             << ".";
 
     } else {
-        workExtents = world->extents;
         workSrs = world->srs;
 
         // analyze in provided SRS
-        const auto mp(analyzeMesh(archives, workSrs));
+        const auto mp(analyzeMesh(archives, workSrs, resolution));
+
+        workExtents = world->extents;
 
         this->resolution = std::sqrt(mp.pixelArea);
 
