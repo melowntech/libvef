@@ -231,12 +231,38 @@ MeshInfo measureMesh(const Archive &archive, const Mesh &mesh
     return mm.info();
 }
 
+struct Done {
+    Done(std::size_t count, std::size_t total)
+        : count(count), total(total)
+    {}
+
+    std::size_t count;
+    std::size_t total;
+};
+
+template<typename CharT, typename Traits>
+inline std::basic_ostream<CharT, Traits>&
+operator<<(std::basic_ostream<CharT, Traits> &os, const Done &d)
+{
+    if (d.total) {
+        double percentage((100.0 * d.count) / d.total);
+        boost::io::ios_precision_saver ps(os);
+        return os << '#' << d.count << " of " << d.total << " ("
+                  << std::fixed << std::setprecision(2)
+                  << std::setw(6) << percentage
+                  << " % done)";
+    }
+    return os << '#' << d.count;
+}
+
 MeshInfo measureMeshes(const Archive &archive
                        , const geo::CsConvertor &inConv = geo::CsConvertor())
 {
     MeshInfo mi;
 
     const auto &windows(archive.manifest().windows);
+
+    std::atomic<std::size_t> measured(0);
 
     // OpenMP magic: create an empty CS conv and tell OpenMP to create a private
     // instance for each thread
@@ -246,7 +272,7 @@ MeshInfo measureMeshes(const Archive &archive
         // clone input cs to the local cs conv
         conv = inConv.clone();
 
-        UTILITY_OMP(parallel for)
+        UTILITY_OMP(for)
         for (std::size_t i = 0; i < windows.size(); ++i) {
             const auto &lWindows(windows[i]);
             const auto &window(lWindows.lods.front());
@@ -264,8 +290,11 @@ MeshInfo measureMeshes(const Archive &archive
                 sm.texture *= size.height;
             }
 
-            UTILITY_OMP(critical(vef23dtiles_measureMeshes_1))
+            UTILITY_OMP(critical(vef_tiling_measureMeshes_1))
                 mi.update(a);
+
+            Done done(++measured, windows.size());
+            LOG(info3) << "Measured " << done << " meshes.";
         }
     }
     return mi;
