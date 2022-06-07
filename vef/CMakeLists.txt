@@ -7,7 +7,8 @@ set(vef_EXTRA_SOURCES)
 if(MODULE_roarchive_FOUND)
   message(STATUS "vef: compiling in roarchive support")
   list(APPEND vef_EXTRA_DEPENDS roarchive)
-  list(APPEND vef_EXTRA_SOURCES reader.hpp reader.cpp)
+  list(APPEND vef_EXTRA_SOURCES
+    reader.hpp reader.cpp)
 else()
   message(STATUS "vef: compiling without roarchive support")
 endif()
@@ -25,8 +26,12 @@ endif()
 
 if(MODULE_roarchive_FOUND AND MODULE_vts-libs-tools-support_FOUND)
   message(STATUS "vef: compiling in VTS tools support")
-  list(APPEND vef_EXTRA_DEPENDS vts-libs-tools-support>=2.15)
-  list(APPEND vef_EXTRA_SOURCES tilecutter.hpp tilecutter.cpp)
+  list(APPEND vef_EXTRA_DEPENDS
+    imgproc
+    vts-libs-tools-support>=2.15)
+  list(APPEND vef_EXTRA_SOURCES
+    tilecutter.hpp tilecutter.cpp
+    25d.hpp 25d.cpp)
 else()
   message(STATUS "vef: compiling without VTS tools support")
 endif()

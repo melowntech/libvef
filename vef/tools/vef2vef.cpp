@@ -741,7 +741,12 @@ void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
 
                 math::Extents3 extents;
 
-                if (dstSrs_ || dstTrafo || clipBorder) {
+                const bool mustConvert(!math::valid(iWindow.extents)
+                                       || dstSrs_
+                                       || dstTrafo
+                                       || clipBorder);
+
+                if (mustConvert) {
                     if (!convertWindow(in, out, iLod, oWindowId, oLodId, conv
                                        , clipBorder, !first, extents))
                     {
