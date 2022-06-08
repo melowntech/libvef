@@ -30,6 +30,7 @@ if(MODULE_roarchive_FOUND AND MODULE_vts-libs-tools-support_FOUND)
     imgproc
     vts-libs-tools-support>=2.15)
   list(APPEND vef_EXTRA_SOURCES
+    utils.hpp utils.cpp
     tilecutter.hpp tilecutter.cpp
     25d.hpp 25d.cpp)
 else()

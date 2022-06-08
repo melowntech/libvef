@@ -37,6 +37,7 @@
 #include "vts-libs/tools-support/repackatlas.hpp"
 
 #include "tilecutter.hpp"
+#include "utils.hpp"
 
 namespace fs = boost::filesystem;
 
@@ -176,8 +177,6 @@ private:
     void tileCut(const vts::TileId &tileId, const vts::Mesh &mesh
                  , const vts::opencv::Atlas &atlas);
 
-    cv::Mat loadTexture(const fs::path &path) const;
-
     geo::CsConvertor vef2world() const;
 
     tools::TmpTileset &ts_;
@@ -210,30 +209,6 @@ void Cutter::operator()(/**vt::ExternalProgress &progress*/)
     }
 
     ts_.flush();
-}
-
-cv::Mat Cutter::loadTexture(const fs::path &path) const
-{
-    const auto &archive(archive_.archive());
-    if (archive.directio()) {
-        // optimized access
-        auto tex(cv::imread(archive.path(path).string()));
-        if (!tex.data) {
-            LOGTHROW(err2, std::runtime_error)
-                << "Unable to load texture from " << path << ".";
-        }
-        return tex;
-    }
-
-    auto is(archive.istream(path));
-    auto tex(cv::imdecode(is->read(), cv::IMREAD_COLOR));
-
-    if (!tex.data) {
-        LOGTHROW(err2, std::runtime_error)
-            << "Unable to load texture from " << is->path() << ".";
-    }
-
-    return tex;
 }
 
 math::Extents2 computeExtents(const vts::Mesh &mesh)
@@ -301,11 +276,7 @@ void Cutter::windowCut(const WindowRecord &wr, const geo::CsConvertor &conv)
             << window.path << ".";
     }
 
-    vts::opencv::Atlas atlas;
-    for (const auto &texture : window.atlas) {
-        LOG(info2) << "Loading window texture from: " << texture.path;
-        atlas.add(loadTexture(texture.path));
-    }
+    const auto atlas(loadAtlas(archive_, window));
 
     auto tr(computeTileRange(worldExtents_, wr.lod, computeExtents(mesh)));
     LOG(info2) << "Splitting window " << window.path

@@ -24,19 +24,56 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef vef_utils_hpp_included_
-#define vef_utils_hpp_included_
+#include <opencv2/highgui/highgui.hpp>
+
+#include "dbglog/dbglog.hpp"
 
 #include "vts-libs/vts/opencv/atlas.hpp"
 
-#include "reader.hpp"
+#include "utils.hpp"
+
+namespace fs = boost::filesystem;
+namespace vts = vtslibs::vts;
 
 namespace vef {
 
-using Atlas = vtslibs::vts::opencv::Atlas;
+namespace {
 
-Atlas loadAtlas(const Archive &archive, const Window &window);
+cv::Mat loadTexture(const Archive &archive, const fs::path &path)
+{
+    const auto &a(archive.archive());
+    if (a.directio()) {
+        // optimized access
+        auto tex(cv::imread(a.path(path).string()));
+        if (!tex.data) {
+            LOGTHROW(err2, std::runtime_error)
+                << "Unable to load texture from " << path << ".";
+        }
+        return tex;
+    }
+
+    auto is(a.istream(path));
+    auto tex(cv::imdecode(is->read(), cv::IMREAD_COLOR));
+
+    if (!tex.data) {
+        LOGTHROW(err2, std::runtime_error)
+            << "Unable to load texture from " << is->path() << ".";
+    }
+
+    return tex;
+}
+
+} // namespace
+
+Atlas loadAtlas(const Archive &archive, const Window &window)
+{
+
+    vts::opencv::Atlas atlas;
+    for (const auto &texture : window.atlas) {
+        LOG(info2) << "Loading window texture from: " << texture.path;
+        atlas.add(loadTexture(archive, texture.path));
+    }
+    return atlas;
+}
 
 } // namespace vef
-
-#endif // vef_utils_included_
