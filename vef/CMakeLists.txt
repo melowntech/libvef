@@ -1,5 +1,5 @@
 # bump version here
-set(vef_VERSION 1.6)
+set(vef_VERSION 1.7)
 
 set(vef_EXTRA_DEPENDS)
 set(vef_EXTRA_SOURCES)
