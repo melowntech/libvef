@@ -32,6 +32,7 @@
 
 #include "geo/geodataset.hpp"
 #include "geo/gdal.hpp"
+#include "geo/vrt.hpp"
 
 #include "imgproc/scanconversion.hpp"
 #include "imgproc/binterpolate.hpp"
@@ -233,51 +234,39 @@ void rasterize(const vts::Mesh &mesh, const Atlas &atlas
             }
         }
     }
-
-    if (0) for (const auto &sm : mesh.submeshes) {
-        for (const auto &face : sm.faces) {
-            const math::Point3 tri[3] = {
-                sm.vertices[face[0]]
-                , sm.vertices[face[1]]
-                , sm.vertices[face[2]]
-            };
-
-            cv::line(ophoto, cv::Point(tri[0](0), tri[0](1))
-                     , cv::Point(tri[1](0), tri[1](1))
-                     , cv::Scalar(0, 0, 255), 1);
-            cv::line(ophoto, cv::Point(tri[1](0), tri[1](1))
-                     , cv::Point(tri[2](0), tri[2](1))
-                     , cv::Scalar(0, 0, 255), 1);
-            cv::line(ophoto, cv::Point(tri[2](0), tri[2](1))
-                     , cv::Point(tri[0](0), tri[0](1))
-                     , cv::Scalar(0, 0, 255), 1);
-        }
-    }
 }
 
-struct Dataset {
+struct Datasets {
+    using list = std::vector<Datasets>;
+
     geo::GeoDataset ophoto;
     geo::GeoDataset dem;
 
-    Dataset(geo::GeoDataset &&ophoto, geo::GeoDataset &&dem)
+    Datasets(geo::GeoDataset &&ophoto, geo::GeoDataset &&dem)
         : ophoto(std::move(ophoto)), dem(std::move(dem))
+    {}
+
+    Datasets()
+        : ophoto(geo::GeoDataset::placeholder())
+        , dem(geo::GeoDataset::placeholder())
     {}
 };
 
-Dataset rasterize(const Archive &archive
-                  , const geo::SrsDefinition &srs
-                  , const OptionalMatrix &wtrafo
-                  , const math::Extents2 &extents, const double res
-                  , const Window &window, const std::string &name
-                  , const fs::path &ophotoDir, const fs::path &demDir)
-{
-    LOG(info3) << "Rasterizing window <" << name << ">.";
-    const auto esize(math::size(extents));
-    const math::Size2 size(int(std::round(esize.width / res))
-                           , int(std::round(esize.height / res)));
 
-    const auto ophotoPath(ophotoDir / (name + ".ophoto.tif"));
-    const auto demPath(demDir / (name + ".dem.tif"));
+math::Size2 sizeInPixels(const math::Size2f &esize, double res)
+{
+    return math::Size2(int(std::round(esize.width / res))
+                       , int(std::round(esize.height / res)));
+}
+
+Datasets createDatasets(const geo::SrsDefinition &srs
+                        , const math::Extents2 &extents, const double res
+                        , const fs::path &ophotoDir, const fs::path &demDir)
+{
+    const auto ophotoPath(ophotoDir / "ophoto.tif");
+    const auto demPath(demDir / "dem.tif");
+
+    const auto size(sizeInPixels(math::size(extents), res));
 
     geo::Gdal::setOption("GDAL_TIFF_INTERNAL_MASK", "YES");
     auto ophoto
@@ -305,6 +294,15 @@ Dataset rasterize(const Archive &archive
              )
           ));
 
+    return Datasets(std::move(ophoto), std::move(dem));
+}
+
+void rasterize(const Archive &archive, const math::Matrix4 &trafo
+               , const Window &window, const std::string &name
+               , Dem &demMat, Image &ophotoMat, Mask &mask)
+{
+    LOG(info3) << "Rasterizing window <" << name << ">.";
+
     // load atlas and mesh
     auto mesh(vts::loadMeshFromObj(*archive.meshIStream(window.mesh)
                                    , window.mesh.path));
@@ -317,11 +315,6 @@ Dataset rasterize(const Archive &archive
 
     // convert mesh to grid-local cooridnates
     {
-        auto trafo(geo2grid(extents, size));
-        if (wtrafo) {
-            trafo = ublas::prod(trafo, *wtrafo);
-        }
-
         for (auto &sm : mesh.submeshes) {
             for (auto &v : sm.vertices) {
                 v = transform(trafo, v);
@@ -329,22 +322,7 @@ Dataset rasterize(const Archive &archive
         }
     }
 
-
-    Dem demMat(size.height, size.width, -1e6f);
-    Image ophotoMat(size.height, size.width, Pixel());
-    Mask mask(size.height, size.width, std::uint8_t(0));
-
     rasterize(mesh, atlas, demMat, ophotoMat, mask);
-
-    dem.writeBlock({}, demMat);
-    dem.writeMaskBlock({}, mask);
-    ophoto.writeBlock({}, ophotoMat);
-    ophoto.writeMaskBlock({}, mask);
-
-    dem.flush();
-    ophoto.flush();
-
-    return Dataset(std::move(ophoto), std::move(dem));
 }
 
 } // namespace
@@ -372,19 +350,45 @@ void generate25d(const fs::path &path, const Archive &archive
 
     const auto &manifest(archive.manifest());
 
-    std::vector<Dataset> ds;
+    // accumulate extents and compute source LOD
+    // NB: all windows should have the same LOD depth!
+    Id useLod(selectLod(manifest.windows.front(), sourceLod));
+    double res(baseResolution * (1 << useLod));
+
+    math::Extents2 extents(math::InvalidExtents{});
+    for (const auto &lw : manifest.windows) {
+        math::update(extents, math::extents2(lw.extents));
+    }
+    extents = alignExtents(extents, {}, res);
+
+    auto datasets(createDatasets(srs, extents, res, ophotoDir, demDir));
+    auto size(datasets.dem.size());
+
+    auto trafo(geo2grid(extents, size));
+
+    Dem demMat(size.height, size.width, -1e6f);
+    Image ophotoMat(size.height, size.width, Pixel());
+    Mask mask(size.height, size.width, std::uint8_t(0));
 
     for (const auto &lw : manifest.windows) {
-        const Id useLod(selectLod(lw, sourceLod));
-        double res(baseResolution * (1 << useLod));
         const auto wtrafo(windowMatrix(archive.manifest(), lw));
-
         const auto &win(lw.lods[useLod]);
-        ds.push_back(rasterize(archive, srs, wtrafo
-                               , alignExtents(math::extents2(lw.extents)
-                                              , {}, res), res
-                               , win, lw.name.value(), ophotoDir, demDir));
+
+        math::Matrix4 t(wtrafo
+                        ? ublas::prod(trafo, *wtrafo)
+                        : trafo);
+
+        rasterize(archive, t, win, lw.name.value()
+                  , demMat, ophotoMat, mask);
     }
+
+    datasets.dem.writeBlock({}, demMat);
+    datasets.dem.writeMaskBlock({}, mask);
+    datasets.ophoto.writeBlock({}, ophotoMat);
+    datasets.ophoto.writeMaskBlock({}, mask);
+
+    datasets.dem.flush();
+    datasets.ophoto.flush();
 
     writer.flush();
 
