@@ -32,7 +32,6 @@
 
 #include "geo/geodataset.hpp"
 #include "geo/gdal.hpp"
-#include "geo/vrt.hpp"
 
 #include "imgproc/scanconversion.hpp"
 #include "imgproc/binterpolate.hpp"
