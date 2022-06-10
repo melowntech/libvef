@@ -26,9 +26,15 @@
 
 #include <opencv2/imgproc/imgproc.hpp>
 
+#include <boost/iostreams/filtering_stream.hpp>
+#include <boost/iostreams/filter/gzip.hpp>
+#include <boost/optional/optional_io.hpp>
+
 #include "dbglog/dbglog.hpp"
 
 #include "utility/scopedguard.hpp"
+
+#include "geometry/meshop.hpp"
 
 #include "geo/geodataset.hpp"
 #include "geo/gdal.hpp"
@@ -42,6 +48,7 @@
 #include "utils.hpp"
 
 namespace fs = boost::filesystem;
+namespace bio = boost::iostreams;
 namespace vts = vtslibs::vts;
 
 namespace vef {
@@ -380,6 +387,25 @@ Datasets generateDatasets(const fs::path &path, const Archive &archive
     return datasets;
 }
 
+void writeMesh(const Mesh &amesh, const geometry::Mesh &mesh)
+{
+    // TODO: use proper setup
+    geometry::ObjStreamSetup setup;
+
+    const auto mtlName(amesh.mtlPath().filename().string());
+    switch (amesh.format) {
+    case vef::Mesh::Format::obj:
+        // plain
+        saveAsObj(mesh, amesh.path, mtlName, setup);
+        break;
+
+    case vef::Mesh::Format::gzippedObj:
+        // gzipped
+        saveAsGzippedObj(mesh, amesh.path, mtlName, setup);
+        break;
+    }
+}
+
 } // namespace
 
 /** Generates lodCount extra LODs from archive[sourceLod] as 2.5 D version of
@@ -389,22 +415,44 @@ void generate25d(const fs::path &path, const Archive &archive
                  , int sourceLod, int lodCount
                  , double baseResolution)
 {
+    const auto &manifest(archive.manifest());
+
     vef::ArchiveWriter writer(path, true);
+    writer.setSrs(manifest.srs.value());
 
     // temporary dir, with cleanup
     const auto tmp(path / "tmp");
     fs::create_directories(tmp);
     //    utility::ScopedGuard tmpCleanup([&tmp]() { fs::remove_all(tmp); });
 
-    const auto &manifest(archive.manifest());
-
     auto datasets(generateDatasets(tmp, archive, sourceLod, baseResolution));
+
+    // all windows should have the same number of LODs!
+    const Id currentEnd(manifest.windows.front().lods.size());
+    const Id newEnd(currentEnd + lodCount);
+
+    for (const auto &lw : manifest.windows) {
+        const auto wid(writer.addWindow(boost::none, boost::none
+                                        , lw.name.value()));
+
+        for (Id lod(0); lod < newEnd; ++lod) {
+            const auto lid(writer.addLod(wid));
+
+            if (lod < currentEnd) {
+                LOG(info4) << "original LOD: <" << lod << ">";
+                writeMesh(writer.mesh(wid, lid), {});
+                continue;
+            }
+
+            LOG(info4) << "new LOD: <" << lod << ">";
+            // TODO: generate valid mesh
+            writeMesh(writer.mesh(wid, lid), {});
+        }
+    }
 
     writer.flush();
 
-    (void) lodCount;
     (void) datasets;
-    (void) manifest;
 }
 
 } // namespace vef

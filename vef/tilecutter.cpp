@@ -270,6 +270,11 @@ void Cutter::windowCut(const WindowRecord &wr, const geo::CsConvertor &conv)
     transformInPlace(mesh, wr.trafo);
     warpInPlace(mesh, conv);
 
+    if (mesh.empty()) {
+        LOG(info2) << "Mesh from " << wm.path << " is empty, skipping.";
+        return;
+    }
+
     if (mesh.submeshes.size() != window.atlas.size()) {
         LOGTHROW(err2, std::runtime_error)
             << "Texture/submesh count mismatch in window "
