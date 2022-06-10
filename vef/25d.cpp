@@ -261,10 +261,10 @@ math::Size2 sizeInPixels(const math::Size2f &esize, double res)
 
 Datasets createDatasets(const geo::SrsDefinition &srs
                         , const math::Extents2 &extents, const double res
-                        , const fs::path &ophotoDir, const fs::path &demDir)
+                        , const fs::path &dir)
 {
-    const auto ophotoPath(ophotoDir / "ophoto.tif");
-    const auto demPath(demDir / "dem.tif");
+    const auto ophotoPath(dir / "ophoto.tif");
+    const auto demPath(dir / "dem.tif");
 
     const auto size(sizeInPixels(math::size(extents), res));
 
@@ -325,29 +325,10 @@ void rasterize(const Archive &archive, const math::Matrix4 &trafo
     rasterize(mesh, atlas, demMat, ophotoMat, mask);
 }
 
-} // namespace
-
-/** Generates lodCount extra LODs from archive[sourceLod] as 2.5 D version of
- *  source meshes.
- */
-void generate25d(const fs::path &path, const Archive &archive
-                 , int sourceLod, int lodCount
-                 , double baseResolution)
+Datasets generateDatasets(const fs::path &path, const Archive &archive
+                          , int sourceLod, double baseResolution)
 {
     const auto srs(archive.manifest().srs.value());
-
-    vef::ArchiveWriter writer(path, true);
-
-    // temporary dir, with cleanup
-    const auto tmp(path / "tmp");
-    fs::create_directories(tmp);
-    //    utility::ScopedGuard tmpCleanup([&tmp]() { fs::remove_all(tmp); });
-
-    const auto ophotoDir(tmp / "ophoto");
-    const auto demDir(tmp / "dem");
-    fs::create_directories(ophotoDir);
-    fs::create_directories(demDir);
-
     const auto &manifest(archive.manifest());
 
     // accumulate extents and compute source LOD
@@ -361,7 +342,7 @@ void generate25d(const fs::path &path, const Archive &archive
     }
     extents = alignExtents(extents, {}, res);
 
-    auto datasets(createDatasets(srs, extents, res, ophotoDir, demDir));
+    auto datasets(createDatasets(srs, extents, res, path));
     auto size(datasets.dem.size());
 
     auto trafo(geo2grid(extents, size));
@@ -390,9 +371,41 @@ void generate25d(const fs::path &path, const Archive &archive
     datasets.dem.flush();
     datasets.ophoto.flush();
 
+    datasets.dem.buildOverviews
+        (geo::GeoDataset::Resampling::average
+         , datasets.dem.binaryDecimation({2, 2}));
+    datasets.ophoto.buildOverviews
+        (geo::GeoDataset::Resampling::average
+         , datasets.ophoto.binaryDecimation({2, 2}));
+
+    return datasets;
+}
+
+} // namespace
+
+/** Generates lodCount extra LODs from archive[sourceLod] as 2.5 D version of
+ *  source meshes.
+ */
+void generate25d(const fs::path &path, const Archive &archive
+                 , int sourceLod, int lodCount
+                 , double baseResolution)
+{
+    vef::ArchiveWriter writer(path, true);
+
+    // temporary dir, with cleanup
+    const auto tmp(path / "tmp");
+    fs::create_directories(tmp);
+    //    utility::ScopedGuard tmpCleanup([&tmp]() { fs::remove_all(tmp); });
+
+    const auto &manifest(archive.manifest());
+
+    auto datasets(generateDatasets(tmp, archive, sourceLod, baseResolution));
+
     writer.flush();
 
     (void) lodCount;
+    (void) datasets;
+    (void) manifest;
 }
 
 } // namespace vef

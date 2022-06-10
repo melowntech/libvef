@@ -28,7 +28,8 @@ if(MODULE_roarchive_FOUND AND MODULE_vts-libs-tools-support_FOUND)
   message(STATUS "vef: compiling in VTS tools support")
   list(APPEND vef_EXTRA_DEPENDS
     imgproc
-    vts-libs-tools-support>=2.15)
+    vts-libs-tools-support>=2.15
+    geo>=1.37)
   list(APPEND vef_EXTRA_SOURCES
     utils.hpp utils.cpp
     tilecutter.hpp tilecutter.cpp
