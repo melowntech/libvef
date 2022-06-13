@@ -25,6 +25,7 @@
  */
 
 #include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/highgui/highgui.hpp>
 
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
@@ -41,6 +42,7 @@
 
 #include "imgproc/scanconversion.hpp"
 #include "imgproc/binterpolate.hpp"
+#include "imgproc/inpaint.hpp"
 
 #include "vts-libs/vts/mesh.hpp"
 
@@ -416,9 +418,10 @@ void generate25d(const fs::path &path, const Archive &archive
                  , double baseResolution)
 {
     const auto &manifest(archive.manifest());
+    const auto &srs(manifest.srs.value());
 
     vef::ArchiveWriter writer(path, true);
-    writer.setSrs(manifest.srs.value());
+    writer.setSrs(srs);
 
     // temporary dir, with cleanup
     const auto tmp(path / "tmp");
@@ -437,16 +440,54 @@ void generate25d(const fs::path &path, const Archive &archive
 
         for (Id lod(0); lod < newEnd; ++lod) {
             const auto lid(writer.addLod(wid));
+            auto &amesh(writer.mesh(wid, lid));
 
             if (lod < currentEnd) {
-                LOG(info4) << "original LOD: <" << lod << ">";
-                writeMesh(writer.mesh(wid, lid), {});
+                LOG(info4)
+                    << "Original LOD " << lod << ", writing empty mesh.";
+                writeMesh(amesh, {});
                 continue;
             }
 
-            LOG(info4) << "new LOD: <" << lod << ">";
+            const double txRes(baseResolution * (1 << lod));
+            const double meshRes(txRes * 3.0); // TODO: make configurable
+
+            LOG(info4) << "New LOD " << lod << ", generating mesh.";
+            LOG(info4) << "    txRes: " << txRes;
+            LOG(info4) << "    meshRes: " << meshRes;
+
+            // TODO: generate imagery
+
+            {
+                // Warping as 16 bits with nodata value set to 256.
+                // When saturated to 8 bits nodata value becomes 0 (black),
+                // plus we can extract mask.
+                const math::Matrix2 identity
+                    (ublas::identity_matrix<double>(2));
+                auto dst(geo::GeoDataset::deriveInMemory
+                         (datasets.ophoto, srs, math::Point2(txRes, txRes)
+                          , datasets.ophoto.extents(), identity
+                          , GDT_UInt16, geo::NodataValue(256)));
+                datasets.ophoto.warpInto
+                    (dst, geo::GeoDataset::Resampling::texture);
+
+                const auto size(dst.size());
+                Image texture(size.height, size.width);
+                dst.readDataInto(CV_8U, texture);
+
+                Mask mask(dst.fetchMask());
+                imgproc::jpegBlockInpaint(texture, mask);
+
+                auto tx(writer.addTexture
+                        (wid, lod, {}, Texture::Format::jpg));
+
+                cv::imwrite(tx.path.string(), texture
+                            , { CV_IMWRITE_JPEG_QUALITY, 90
+                                , CV_IMWRITE_PNG_COMPRESSION, 9 });
+            }
+
             // TODO: generate valid mesh
-            writeMesh(writer.mesh(wid, lid), {});
+            writeMesh(amesh, {});
         }
     }
 
