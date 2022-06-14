@@ -170,6 +170,10 @@ public:
      */
     void setExtents(Id windowId, const math::Extents3 &extents);
 
+    /** Set lodded window transformation matrix.
+     */
+    void setTrafo(Id windowId, const OptionalMatrix &trafo);
+
     /** Expect given number of windows
      */
     void expectWindows(std::size_t size);

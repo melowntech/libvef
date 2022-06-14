@@ -434,6 +434,19 @@ void ArchiveWriter::setExtents(Id windowId, const math::Extents3 &extents)
     window.extents = extents;
 }
 
+void ArchiveWriter::setTrafo(Id windowId, const OptionalMatrix &trafo)
+{
+    if (windowId >= manifest_.windows.size()) {
+        LOGTHROW(err1, std::logic_error)
+            << "Cannot set a transofmration matrix to a window: "
+            "invalid window index "
+            << windowId << ".";
+    }
+
+    auto &window(manifest_.windows[windowId]);
+    window.trafo = trafo;
+}
+
 void ArchiveWriter::expectWindows(std::size_t size)
 {
     manifest_.windows.reserve(std::max(manifest_.windows.capacity(), size));

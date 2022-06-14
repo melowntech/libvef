@@ -35,16 +35,21 @@
 
 #include "utility/scopedguard.hpp"
 
+#include "math/geometry.hpp"
+#include "math/transform.hpp"
+
 #include "geometry/meshop.hpp"
 
 #include "geo/geodataset.hpp"
 #include "geo/gdal.hpp"
+#include "geo/coordinates.hpp"
 
 #include "imgproc/scanconversion.hpp"
 #include "imgproc/binterpolate.hpp"
 #include "imgproc/inpaint.hpp"
 
 #include "vts-libs/vts/mesh.hpp"
+#include "vts-libs/vts/math.hpp"
 
 #include "25d.hpp"
 #include "utils.hpp"
@@ -75,6 +80,102 @@ inline math::Point2 transform(const Matrix2x3 &tr, double x, double y)
 inline math::Point2 transform(const Matrix2x3 &tr, const math::Point2 &p)
 {
     return transform(tr, p(0), p(1));
+}
+
+/** Computes area of 3D mesh and area of its projecteion to X-Y plane.
+ *  Projection is determined as an area of triangle with Z cooridnated set to
+ *  zero. Therefore, mesh cannot have overlapping trinagles.
+ */
+std::pair<double, double> meshArea(const geometry::Mesh &mesh)
+{
+    std::pair<double, double> res(0.0, 0.0);
+    auto &area(res.first);
+    auto &projected(res.second);
+
+    for (const auto &face : mesh.faces) {
+        auto a(mesh.vertices[face.a]);
+        auto b(mesh.vertices[face.b]);
+        auto c(mesh.vertices[face.c]);
+
+        // area in 3D
+        area += vts::triangleArea(a, b, c);
+
+        // reset z coordinate -> area in 2D
+        a[2] = b[2] = c[2] = 0.0;
+        projected += vts::triangleArea(a, b, c);
+    }
+
+    return res;
+}
+
+class TileFacesCalculator {
+public:
+    TileFacesCalculator()
+        : base_(1000), roughnessFactorMin_(0.0), roughnessFactorMax_(3.0)
+        , quotient_(1.0 - (1.0 / roughnessFactorMax_))
+    {}
+
+    int operator()(double meshArea, double meshProjectedArea) const;
+
+private:
+    int base_;
+    double roughnessFactorMin_;
+    double roughnessFactorMax_;
+    double quotient_;
+};
+
+int TileFacesCalculator::operator()(double meshArea, double meshProjectedArea)
+    const
+{
+    // ratio between mesh area and area of its projection to tile base
+    const auto areaRatio(meshArea / meshProjectedArea);
+
+    // calculate scaling factor
+    auto factor((std::pow(quotient_, areaRatio) - 1.0)
+                      / (quotient_ - 1.0));
+
+    // clamp factor to min/max range
+    factor = math::clamp(factor, roughnessFactorMin_, roughnessFactorMax_);
+
+    // apply factor to base number of faces
+    return base_* factor;
+}
+
+void simplifyMesh(geometry::Mesh &mesh
+                  , const TileFacesCalculator &tileFacesCalculator)
+{
+    // calculate number of faces
+    const auto area(meshArea(mesh));
+    const int faceCount(tileFacesCalculator(area.first, area.second));
+    LOG(info1)
+        << "Simplifying mesh to " << faceCount << " faces per tile (from "
+        << mesh.faces.size() << ".";
+
+    // simplify with locked inner border
+
+    if (int(faceCount) < int(mesh.faces.size())) {
+        // max edge is radius of tile divided by edges per side computed from
+        // faces-per-tile
+        const auto maxEdgeLength
+            (std::sqrt((2 * area.second) / (faceCount / 2.0)));
+
+        mesh = *simplify(mesh, faceCount
+                         , geometry::SimplifyOptions
+                         (geometry::SimplifyOption::INNERBORDER
+                          | geometry::SimplifyOption::CORNERS
+                          | geometry::SimplifyOption::PREVENTFACEFLIP)
+                         .minAspectRatio(5)
+                         .maxEdgeLength(maxEdgeLength)
+                         );
+
+        LOG(info1)
+            << "Simplified mesh to " << mesh.faces.size()
+            << " faces (should be " << faceCount
+            << ", difference: " << (int(mesh.faces.size()) - int(faceCount))
+            << ").";
+    } else {
+        LOG(info1) << "No need to simplify mesh.";
+    }
 }
 
 Id selectLod(const LoddedWindow &lw, int sourceLod)
@@ -408,6 +509,13 @@ void writeMesh(const Mesh &amesh, const geometry::Mesh &mesh)
     }
 }
 
+math::Extents2 extentsPlusHalfPixel(const math::Extents2 &extents
+                                    , const double &res)
+{
+    const math::Point2 hpx(res / 2, res / 2);
+    return math::Extents2(extents.ll - hpx, extents.ur + hpx);
+}
+
 } // namespace
 
 /** Generates lodCount extra LODs from archive[sourceLod] as 2.5 D version of
@@ -417,6 +525,8 @@ void generate25d(const fs::path &path, const Archive &archive
                  , int sourceLod, int lodCount
                  , double baseResolution)
 {
+    using namespace std::literals;
+
     const auto &manifest(archive.manifest());
     const auto &srs(manifest.srs.value());
 
@@ -426,7 +536,6 @@ void generate25d(const fs::path &path, const Archive &archive
     // temporary dir, with cleanup
     const auto tmp(path / "tmp");
     fs::create_directories(tmp);
-    //    utility::ScopedGuard tmpCleanup([&tmp]() { fs::remove_all(tmp); });
 
     auto datasets(generateDatasets(tmp, archive, sourceLod, baseResolution));
 
@@ -434,66 +543,95 @@ void generate25d(const fs::path &path, const Archive &archive
     const Id currentEnd(manifest.windows.front().lods.size());
     const Id newEnd(currentEnd + lodCount);
 
-    for (const auto &lw : manifest.windows) {
-        const auto wid(writer.addWindow(boost::none, boost::none
-                                        , lw.name.value()));
+    const auto &extents(datasets.ophoto.extents());
+    const auto l2g(geo::local2geo(extents));
 
-        for (Id lod(0); lod < newEnd; ++lod) {
-            const auto lid(writer.addLod(wid));
-            auto &amesh(writer.mesh(wid, lid));
+    writer.setTrafo(l2g);
 
-            if (lod < currentEnd) {
-                LOG(info4)
-                    << "Original LOD " << lod << ", writing empty mesh.";
-                writeMesh(amesh, {});
-                continue;
-            }
+    const auto wid(writer.addWindow(boost::none, boost::none
+                                    , "ophoto"s));
 
-            const double txRes(baseResolution * (1 << lod));
-            const double meshRes(txRes * 3.0); // TODO: make configurable
+    math::Extents3 e3(math::InvalidExtents{});
 
-            LOG(info4) << "New LOD " << lod << ", generating mesh.";
-            LOG(info4) << "    txRes: " << txRes;
-            LOG(info4) << "    meshRes: " << meshRes;
+    for (Id lod(0); lod < newEnd; ++lod) {
+        const auto lid(writer.addLod(wid));
+        auto &amesh(writer.mesh(wid, lid));
 
-            // TODO: generate imagery
-
-            {
-                // Warping as 16 bits with nodata value set to 256.
-                // When saturated to 8 bits nodata value becomes 0 (black),
-                // plus we can extract mask.
-                const math::Matrix2 identity
-                    (ublas::identity_matrix<double>(2));
-                auto dst(geo::GeoDataset::deriveInMemory
-                         (datasets.ophoto, srs, math::Point2(txRes, txRes)
-                          , datasets.ophoto.extents(), identity
-                          , GDT_UInt16, geo::NodataValue(256)));
-                datasets.ophoto.warpInto
-                    (dst, geo::GeoDataset::Resampling::texture);
-
-                const auto size(dst.size());
-                Image texture(size.height, size.width);
-                dst.readDataInto(CV_8U, texture);
-
-                Mask mask(dst.fetchMask());
-                imgproc::jpegBlockInpaint(texture, mask);
-
-                auto tx(writer.addTexture
-                        (wid, lod, {}, Texture::Format::jpg));
-
-                cv::imwrite(tx.path.string(), texture
-                            , { CV_IMWRITE_JPEG_QUALITY, 90
-                                , CV_IMWRITE_PNG_COMPRESSION, 9 });
-            }
-
-            // TODO: generate valid mesh
+        if (lod < currentEnd) {
             writeMesh(amesh, {});
+            continue;
         }
+
+        const double txRes(baseResolution * (1 << lod));
+        const double meshRes(txRes * 3.0); // TODO: make configurable
+
+        // generate imagery
+
+        // Warping as 16 bits with nodata value set to 256.
+        // When saturated to 8 bits nodata value becomes 0 (black),
+        // plus we can extract mask.
+        const math::Matrix2 identity
+            (ublas::identity_matrix<double>(2));
+        auto ophoto(geo::GeoDataset::deriveInMemory
+                    (datasets.ophoto, srs
+                     , math::Point2(txRes, txRes)
+                     , extents, identity
+                     , GDT_UInt16, geo::NodataValue(256)));
+        datasets.ophoto.warpInto
+            (ophoto, geo::GeoDataset::Resampling::texture);
+
+        const auto size(ophoto.size());
+        Image texture(size.height, size.width);
+        ophoto.readDataInto(CV_8U, texture);
+
+        Mask mask(ophoto.fetchMask());
+        imgproc::jpegBlockInpaint(texture, mask);
+
+        Texture tx;
+        tx.size = size;
+        tx = writer.addTexture(wid, lod, tx, Texture::Format::jpg);
+        tx.size = size;
+
+        cv::imwrite(tx.path.string(), texture
+                    , { CV_IMWRITE_JPEG_QUALITY, 90
+                        , CV_IMWRITE_PNG_COMPRESSION, 9 });
+
+        // generate valid mesh
+
+        // add half-pixel to extents to generate triangled
+        // border-to-border
+        const auto inflatedExtents
+            (extentsPlusHalfPixel(extents, meshRes));
+
+        auto dsm(geo::GeoDataset::deriveInMemory
+                 (datasets.dem, srs
+                  , math::Point2(meshRes, meshRes)
+                  , inflatedExtents, identity
+                  , GDT_Float64, geo::NodataValue(-1e6)));
+        datasets.dem.warpInto
+            (dsm, geo::GeoDataset::Resampling::dem);
+
+        // generate (raw) mesh
+        geometry::Mesh rmesh;
+        dsm.exportMesh(rmesh);
+
+        // simplify it
+        simplifyMesh(rmesh, TileFacesCalculator());
+
+        // texture raw mesh
+        geometry::Mesh tmesh;
+        ophoto.textureMesh(rmesh, inflatedExtents, tmesh);
+
+        writeMesh(amesh, tmesh);
+
+        math::update(e3, math::computeExtents(tmesh.vertices));
     }
 
-    writer.flush();
+    // set extents in world coords
+    writer.setExtents(wid, transform(l2g, e3));
 
-    (void) datasets;
+    // done
+    writer.flush();
 }
 
 } // namespace vef

@@ -29,7 +29,8 @@ if(MODULE_roarchive_FOUND AND MODULE_vts-libs-tools-support_FOUND)
   list(APPEND vef_EXTRA_DEPENDS
     imgproc
     vts-libs-tools-support>=2.15
-    geo>=1.37)
+    geo>=1.37
+    OPENMESH)
   list(APPEND vef_EXTRA_SOURCES
     utils.hpp utils.cpp
     tilecutter.hpp tilecutter.cpp
