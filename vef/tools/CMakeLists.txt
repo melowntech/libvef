@@ -13,9 +13,20 @@ if(TARGET roarchive)
   target_link_libraries(vef2vef ${MODULE_LIBRARIES})
   buildsys_target_compile_definitions(vef2vef PRIVATE ${MODULE_DEFINITIONS})
   buildsys_binary(vef2vef)
+
+  # load tool
+  set(vefupdate_SOURCES
+    vefupdate.cpp
+    )
+
+  add_executable(vefupdate ${vefupdate_SOURCES})
+  target_link_libraries(vefupdate ${MODULE_LIBRARIES})
+  buildsys_target_compile_definitions(vefupdate PRIVATE ${MODULE_DEFINITIONS})
+  buildsys_binary(vefupdate)
+
+  if(vef-install_component)
+    install(TARGETS vef2vef vefupdate RUNTIME DESTINATION bin
+      COMPONENT ${vef-install_component})
+  endif()
 endif()
 
-if(TARGET vef2vef AND vef-install_component)
-  install(TARGETS vef2vef RUNTIME DESTINATION bin
-    COMPONENT ${vef-install_component})
-endif()

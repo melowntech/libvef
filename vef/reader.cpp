@@ -218,16 +218,33 @@ Manifest loadManifest(const fs::path &path, bool useLocalPaths)
     return mf;
 }
 
+fs::path getRoot(const fs::path &def)
+{
+    const auto raw(def.string());
+    const auto semi(raw.find(';'));
+    return raw.substr(0, semi);
+}
+
+std::string getManifest(const fs::path &def)
+{
+    const auto raw(def.string());
+    const auto semi(raw.find(';'));
+    if (semi == std::string::npos) { return constants::ManifestName; }
+    return raw.substr(semi + 1);
+}
+
 } // namespace
 
-Archive::Archive(const fs::path &root)
-    : archive_(root, constants::ManifestName)
-    , manifest_(loadManifest(archive_.istream(constants::ManifestName), true))
+Archive::Archive(const fs::path &root, bool useLocalPaths)
+    : archive_(getRoot(root), getManifest(root))
+    , manifest_(loadManifest(archive_.istream(getManifest(root))
+                             , useLocalPaths))
 {}
 
-Archive::Archive(roarchive::RoArchive &archive)
+Archive::Archive(roarchive::RoArchive &archive, bool useLocalPaths)
     : archive_(archive.applyHint(constants::ManifestName))
-    , manifest_(loadManifest(archive_.istream(constants::ManifestName), true))
+    , manifest_(loadManifest(archive_.istream(constants::ManifestName)
+                             , useLocalPaths))
 {}
 
 roarchive::IStream::pointer Archive::meshIStream(const Mesh &mesh) const

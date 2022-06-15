@@ -192,6 +192,15 @@ private:
     Manifest manifest_;
 };
 
+/** Save manifest to given file.
+ *
+ * \param path manifest file path
+ * \param manifest manifest to save
+ * \param root archive root (all paths are made relative to this root)
+ */
+void saveManifest(const boost::filesystem::path &path, const Manifest &manifest
+                  , const boost::filesystem::path &root);
+
 UTILITY_GENERATE_ENUM_IO(Texture::Format,
     ((jpg))
     ((png))
