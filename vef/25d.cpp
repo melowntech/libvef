@@ -180,13 +180,14 @@ void simplifyMesh(geometry::Mesh &mesh
 
 Id selectLod(const LoddedWindow &lw, int sourceLod)
 {
-    if (sourceLod >= int(lw.lods.size())) {
+    const int totalLods(lw.lods.size());
+    if (sourceLod >= totalLods) {
         LOGTHROW(err2, std::runtime_error)
             << lw.path << ": Invalid source LOD " << sourceLod << ".";
     }
 
     if (sourceLod < 0) {
-        if (-sourceLod >= int(lw.lods.size())) {
+        if (-sourceLod >= totalLods) {
             LOGTHROW(err2, std::runtime_error)
                 << lw.path << ": Invalid source LOD " << sourceLod << ".";
         }
@@ -523,7 +524,8 @@ math::Extents2 extentsPlusHalfPixel(const math::Extents2 &extents
  */
 void generate25d(const fs::path &path, const Archive &archive
                  , int sourceLod, int lodCount
-                 , double baseResolution)
+                 , double baseResolution
+                 , const boost::optional<int> &generateFromLod)
 {
     using namespace std::literals;
 
@@ -540,8 +542,13 @@ void generate25d(const fs::path &path, const Archive &archive
     auto datasets(generateDatasets(tmp, archive, sourceLod, baseResolution));
 
     // all windows should have the same number of LODs!
-    const Id currentEnd(manifest.windows.front().lods.size());
-    const Id newEnd(currentEnd + lodCount);
+    const Id totalLods(manifest.windows.front().lods.size());
+
+    const Id currentEnd
+        (generateFromLod
+         ? selectLod(manifest.windows.front(), *generateFromLod)
+         : totalLods);
+    const Id newEnd(totalLods + lodCount);
 
     const auto &extents(datasets.ophoto.extents());
     const auto l2g(geo::local2geo(extents));

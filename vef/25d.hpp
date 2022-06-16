@@ -38,9 +38,15 @@ namespace vef {
  *  source meshes.
  *
  *  \param sourceLod source LOD, negative indexes LODs from coarsest
+ *  \param lodCount number of LODs to generate above past the last existing LOD
+ *  \param baseResolution dataset resolution at LOD=0
+
+ *  \param generateFromLod debug option, allows to generate data even at lower
+ *                         LODs
  */
 void generate25d(const boost::filesystem::path &path, const Archive &archive
-                 , int sourceLod, int lodCount, double baseResolution);
+                 , int sourceLod, int lodCount, double baseResolution
+                 , const boost::optional<int> &generateFromLod = boost::none);
 
 } // namespace vef
 
