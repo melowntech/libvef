@@ -33,7 +33,7 @@
 
 #include "dbglog/dbglog.hpp"
 
-#include "utility/scopedguard.hpp"
+#include "utility/path.hpp"
 
 #include "math/geometry.hpp"
 #include "math/transform.hpp"
@@ -510,13 +510,6 @@ void writeMesh(const Mesh &amesh, const geometry::Mesh &mesh)
     }
 }
 
-math::Extents2 extentsPlusHalfPixel(const math::Extents2 &extents
-                                    , const double &res)
-{
-    const math::Point2 hpx(res / 2, res / 2);
-    return math::Extents2(extents.ll - hpx, extents.ur + hpx);
-}
-
 } // namespace
 
 /** Generates lodCount extra LODs from archive[sourceLod] as 2.5 D version of
@@ -585,7 +578,7 @@ void generate25d(const fs::path &path, const Archive &archive
                      , extents, identity
                      , GDT_UInt16, geo::NodataValue(256)));
         datasets.ophoto.warpInto
-            (ophoto, geo::GeoDataset::Resampling::texture);
+            (ophoto, geo::GeoDataset::Resampling::average);
 
         const auto size(ophoto.size());
         Image texture(size.height, size.width);
@@ -603,31 +596,57 @@ void generate25d(const fs::path &path, const Archive &archive
                     , { CV_IMWRITE_JPEG_QUALITY, 90
                         , CV_IMWRITE_PNG_COMPRESSION, 9 });
 
+        // ophoto.copy(utility::addExtension(tx.path, ".tif"), "GTiff");
+
         // generate valid mesh
 
-        // add half-pixel to extents to generate triangled
-        // border-to-border
-        const auto inflatedExtents
-            (extentsPlusHalfPixel(extents, meshRes));
+        math::Size2 demSize;
+        math::Extents2 demExtents;
 
-        auto dsm(geo::GeoDataset::deriveInMemory
+        // compute DEM extents with added halfpixel around
+        {
+            const auto esize(math::size(extents));
+            demSize = sizeInPixels(esize, meshRes);
+            const math::Point2 realMeshRes(esize.width / demSize.width
+                                            , esize.height / demSize.height);
+
+            // add one pixel (-> half pixel at each side)
+            demSize.width += 1;
+            demSize.height += 1;
+
+            const math::Point2 end((demSize.width * realMeshRes(0)) / 2
+                                   , (demSize.height * realMeshRes(1)) / 2);
+
+            const auto center(math::center(extents));
+            demExtents.ll = center - end;
+            demExtents.ur = center + end;
+        }
+
+        auto dem(geo::GeoDataset::deriveInMemory
                  (datasets.dem, srs
-                  , math::Point2(meshRes, meshRes)
-                  , inflatedExtents, identity
+                  , demSize
+                  , demExtents
                   , GDT_Float64, geo::NodataValue(-1e6)));
+
         datasets.dem.warpInto
-            (dsm, geo::GeoDataset::Resampling::dem);
+            (dem, geo::GeoDataset::Resampling::average);
+
+        // dem.copy(utility::addExtension(amesh.path, ".tif"), "GTiff");
 
         // generate (raw) mesh
         geometry::Mesh rmesh;
-        dsm.exportMesh(rmesh);
+        dem.exportMesh(rmesh);
 
         // simplify it
         simplifyMesh(rmesh, TileFacesCalculator());
 
+        // hack: do not take mask into account
+        ophoto.mask().reset(true);
+        ophoto.flush();
+
         // texture raw mesh
         geometry::Mesh tmesh;
-        ophoto.textureMesh(rmesh, inflatedExtents, tmesh);
+        ophoto.textureMesh(rmesh, demExtents, tmesh);
 
         writeMesh(amesh, tmesh);
 
