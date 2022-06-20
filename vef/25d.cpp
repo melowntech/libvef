@@ -590,7 +590,6 @@ void generate25d(const fs::path &path, const Archive &archive
         Texture tx;
         tx.size = size;
         tx = writer.addTexture(wid, lod, tx, Texture::Format::jpg);
-        tx.size = size;
 
         cv::imwrite(tx.path.string(), texture
                     , { CV_IMWRITE_JPEG_QUALITY, 90
