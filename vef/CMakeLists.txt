@@ -34,7 +34,9 @@ if(MODULE_roarchive_FOUND AND MODULE_vts-libs-tools-support_FOUND)
   list(APPEND vef_EXTRA_SOURCES
     utils.hpp utils.cpp
     tilecutter.hpp tilecutter.cpp
-    25d.hpp 25d.cpp)
+    25d.hpp 25d.cpp
+    25d.po.hpp
+    )
 else()
   message(STATUS "vef: compiling without VTS tools support")
 endif()
