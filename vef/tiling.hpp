@@ -72,19 +72,22 @@ struct Tiling {
            , const math::Size2 &optimalTextureSize
            , bool for3dCutting = false
            , const boost::optional<double> &resolution = boost::none
-           , const boost::optional<World> &world = boost::none);
+           , const boost::optional<World> &world = boost::none
+           , std::size_t extraLods = 0);
 
     Tiling(const Archive::list &archives
            , const math::Size2 &optimalTextureSize
            , bool for3dCutting = false
            , const boost::optional<double> &resolution = boost::none
-           , const boost::optional<World> &world = boost::none);
+           , const boost::optional<World> &world = boost::none
+           , std::size_t extraLods = 0);
 
     Tiling(const Archives &archives
            , const math::Size2 &optimalTextureSize
            , bool for3dCutting = false
            , const boost::optional<double> &resolution = boost::none
-           , const boost::optional<World> &world = boost::none);
+           , const boost::optional<World> &world = boost::none
+           , std::size_t extraLods = 0);
 
     Tiling(std::ostream &os);
 
@@ -97,18 +100,22 @@ inline Tiling::Tiling(const Archive &archive
                       , const math::Size2 &optimalTextureSize
                       , bool for3dCutting
                       , const boost::optional<double> &resolution
-                      , const boost::optional<World> &world)
+                      , const boost::optional<World> &world
+                      , std::size_t extraLods)
     : Tiling(Archives({std::cref(archive)})
-             , optimalTextureSize, for3dCutting, resolution, world)
+             , optimalTextureSize, for3dCutting, resolution, world
+             , extraLods)
 {}
 
 inline Tiling::Tiling(const Archive::list &archives
                       , const math::Size2 &optimalTextureSize
                       , bool for3dCutting
                       , const boost::optional<double> &resolution
-                      , const boost::optional<World> &world)
+                      , const boost::optional<World> &world
+                      , std::size_t extraLods)
     : Tiling(Archives(archives.begin(), archives.end())
-             , optimalTextureSize, for3dCutting, resolution, world)
+             , optimalTextureSize, for3dCutting, resolution, world
+             , extraLods)
 {}
 
 } // namespace vef

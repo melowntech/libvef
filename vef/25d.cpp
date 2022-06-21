@@ -25,24 +25,37 @@
  */
 
 #include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/highgui/highgui.hpp>
+
+#include <boost/iostreams/filtering_stream.hpp>
+#include <boost/iostreams/filter/gzip.hpp>
+#include <boost/optional/optional_io.hpp>
 
 #include "dbglog/dbglog.hpp"
 
-#include "utility/scopedguard.hpp"
+#include "utility/path.hpp"
+
+#include "math/geometry.hpp"
+#include "math/transform.hpp"
+
+#include "geometry/meshop.hpp"
 
 #include "geo/geodataset.hpp"
 #include "geo/gdal.hpp"
-#include "geo/vrt.hpp"
+#include "geo/coordinates.hpp"
 
 #include "imgproc/scanconversion.hpp"
 #include "imgproc/binterpolate.hpp"
+#include "imgproc/inpaint.hpp"
 
 #include "vts-libs/vts/mesh.hpp"
+#include "vts-libs/vts/math.hpp"
 
 #include "25d.hpp"
 #include "utils.hpp"
 
 namespace fs = boost::filesystem;
+namespace bio = boost::iostreams;
 namespace vts = vtslibs::vts;
 
 namespace vef {
@@ -69,15 +82,112 @@ inline math::Point2 transform(const Matrix2x3 &tr, const math::Point2 &p)
     return transform(tr, p(0), p(1));
 }
 
+/** Computes area of 3D mesh and area of its projecteion to X-Y plane.
+ *  Projection is determined as an area of triangle with Z cooridnated set to
+ *  zero. Therefore, mesh cannot have overlapping trinagles.
+ */
+std::pair<double, double> meshArea(const geometry::Mesh &mesh)
+{
+    std::pair<double, double> res(0.0, 0.0);
+    auto &area(res.first);
+    auto &projected(res.second);
+
+    for (const auto &face : mesh.faces) {
+        auto a(mesh.vertices[face.a]);
+        auto b(mesh.vertices[face.b]);
+        auto c(mesh.vertices[face.c]);
+
+        // area in 3D
+        area += vts::triangleArea(a, b, c);
+
+        // reset z coordinate -> area in 2D
+        a[2] = b[2] = c[2] = 0.0;
+        projected += vts::triangleArea(a, b, c);
+    }
+
+    return res;
+}
+
+class TileFacesCalculator {
+public:
+    TileFacesCalculator()
+        : base_(1000), roughnessFactorMin_(0.0), roughnessFactorMax_(3.0)
+        , quotient_(1.0 - (1.0 / roughnessFactorMax_))
+    {}
+
+    int operator()(double meshArea, double meshProjectedArea) const;
+
+private:
+    int base_;
+    double roughnessFactorMin_;
+    double roughnessFactorMax_;
+    double quotient_;
+};
+
+int TileFacesCalculator::operator()(double meshArea, double meshProjectedArea)
+    const
+{
+    // ratio between mesh area and area of its projection to tile base
+    const auto areaRatio(meshArea / meshProjectedArea);
+
+    // calculate scaling factor
+    auto factor((std::pow(quotient_, areaRatio) - 1.0)
+                      / (quotient_ - 1.0));
+
+    // clamp factor to min/max range
+    factor = math::clamp(factor, roughnessFactorMin_, roughnessFactorMax_);
+
+    // apply factor to base number of faces
+    return base_* factor;
+}
+
+void simplifyMesh(geometry::Mesh &mesh
+                  , const TileFacesCalculator &tileFacesCalculator)
+{
+    // calculate number of faces
+    const auto area(meshArea(mesh));
+    const int faceCount(tileFacesCalculator(area.first, area.second));
+    LOG(info1)
+        << "Simplifying mesh to " << faceCount << " faces per tile (from "
+        << mesh.faces.size() << ".";
+
+    // simplify with locked inner border
+
+    if (int(faceCount) < int(mesh.faces.size())) {
+        // max edge is radius of tile divided by edges per side computed from
+        // faces-per-tile
+        const auto maxEdgeLength
+            (std::sqrt((2 * area.second) / (faceCount / 2.0)));
+
+        mesh = *simplify(mesh, faceCount
+                         , geometry::SimplifyOptions
+                         (geometry::SimplifyOption::INNERBORDER
+                          | geometry::SimplifyOption::CORNERS
+                          | geometry::SimplifyOption::PREVENTFACEFLIP)
+                         .minAspectRatio(5)
+                         .maxEdgeLength(maxEdgeLength)
+                         );
+
+        LOG(info1)
+            << "Simplified mesh to " << mesh.faces.size()
+            << " faces (should be " << faceCount
+            << ", difference: " << (int(mesh.faces.size()) - int(faceCount))
+            << ").";
+    } else {
+        LOG(info1) << "No need to simplify mesh.";
+    }
+}
+
 Id selectLod(const LoddedWindow &lw, int sourceLod)
 {
-    if (sourceLod >= int(lw.lods.size())) {
+    const int totalLods(lw.lods.size());
+    if (sourceLod >= totalLods) {
         LOGTHROW(err2, std::runtime_error)
             << lw.path << ": Invalid source LOD " << sourceLod << ".";
     }
 
     if (sourceLod < 0) {
-        if (-sourceLod >= int(lw.lods.size())) {
+        if (-sourceLod >= totalLods) {
             LOGTHROW(err2, std::runtime_error)
                 << lw.path << ": Invalid source LOD " << sourceLod << ".";
         }
@@ -261,10 +371,10 @@ math::Size2 sizeInPixels(const math::Size2f &esize, double res)
 
 Datasets createDatasets(const geo::SrsDefinition &srs
                         , const math::Extents2 &extents, const double res
-                        , const fs::path &ophotoDir, const fs::path &demDir)
+                        , const fs::path &dir)
 {
-    const auto ophotoPath(ophotoDir / "ophoto.tif");
-    const auto demPath(demDir / "dem.tif");
+    const auto ophotoPath(dir / "ophoto.tif");
+    const auto demPath(dir / "dem.tif");
 
     const auto size(sizeInPixels(math::size(extents), res));
 
@@ -325,29 +435,10 @@ void rasterize(const Archive &archive, const math::Matrix4 &trafo
     rasterize(mesh, atlas, demMat, ophotoMat, mask);
 }
 
-} // namespace
-
-/** Generates lodCount extra LODs from archive[sourceLod] as 2.5 D version of
- *  source meshes.
- */
-void generate25d(const fs::path &path, const Archive &archive
-                 , int sourceLod, int lodCount
-                 , double baseResolution)
+Datasets generateDatasets(const fs::path &path, const Archive &archive
+                          , int sourceLod, double baseResolution)
 {
     const auto srs(archive.manifest().srs.value());
-
-    vef::ArchiveWriter writer(path, true);
-
-    // temporary dir, with cleanup
-    const auto tmp(path / "tmp");
-    fs::create_directories(tmp);
-    //    utility::ScopedGuard tmpCleanup([&tmp]() { fs::remove_all(tmp); });
-
-    const auto ophotoDir(tmp / "ophoto");
-    const auto demDir(tmp / "dem");
-    fs::create_directories(ophotoDir);
-    fs::create_directories(demDir);
-
     const auto &manifest(archive.manifest());
 
     // accumulate extents and compute source LOD
@@ -361,7 +452,7 @@ void generate25d(const fs::path &path, const Archive &archive
     }
     extents = alignExtents(extents, {}, res);
 
-    auto datasets(createDatasets(srs, extents, res, ophotoDir, demDir));
+    auto datasets(createDatasets(srs, extents, res, path));
     auto size(datasets.dem.size());
 
     auto trafo(geo2grid(extents, size));
@@ -390,9 +481,182 @@ void generate25d(const fs::path &path, const Archive &archive
     datasets.dem.flush();
     datasets.ophoto.flush();
 
-    writer.flush();
+    datasets.dem.buildOverviews
+        (geo::GeoDataset::Resampling::average
+         , datasets.dem.binaryDecimation({2, 2}));
+    datasets.ophoto.buildOverviews
+        (geo::GeoDataset::Resampling::average
+         , datasets.ophoto.binaryDecimation({2, 2}));
 
-    (void) lodCount;
+    return datasets;
+}
+
+void writeMesh(const Mesh &amesh, const geometry::Mesh &mesh)
+{
+    // TODO: use proper setup
+    geometry::ObjStreamSetup setup;
+
+    const auto mtlName(amesh.mtlPath().filename().string());
+    switch (amesh.format) {
+    case vef::Mesh::Format::obj:
+        // plain
+        saveAsObj(mesh, amesh.path, mtlName, setup);
+        break;
+
+    case vef::Mesh::Format::gzippedObj:
+        // gzipped
+        saveAsGzippedObj(mesh, amesh.path, mtlName, setup);
+        break;
+    }
+}
+
+} // namespace
+
+/** Generates lodCount extra LODs from archive[sourceLod] as 2.5 D version of
+ *  source meshes.
+ */
+void generate25d(const fs::path &path, const Archive &archive
+                 , int sourceLod, int lodCount
+                 , double baseResolution
+                 , const boost::optional<int> &generateFromLod)
+{
+    using namespace std::literals;
+
+    const auto &manifest(archive.manifest());
+    const auto &srs(manifest.srs.value());
+
+    vef::ArchiveWriter writer(path, true);
+    writer.setSrs(srs);
+
+    // temporary dir, with cleanup
+    const auto tmp(path / "tmp");
+    fs::create_directories(tmp);
+
+    auto datasets(generateDatasets(tmp, archive, sourceLod, baseResolution));
+
+    // all windows should have the same number of LODs!
+    const Id totalLods(manifest.windows.front().lods.size());
+
+    const Id currentEnd
+        (generateFromLod
+         ? selectLod(manifest.windows.front(), *generateFromLod)
+         : totalLods);
+    const Id newEnd(totalLods + lodCount);
+
+    const auto &extents(datasets.ophoto.extents());
+    const auto l2g(geo::local2geo(extents));
+
+    writer.setTrafo(l2g);
+
+    const auto wid(writer.addWindow(boost::none, boost::none
+                                    , "ophoto"s));
+
+    math::Extents3 e3(math::InvalidExtents{});
+
+    for (Id lod(0); lod < newEnd; ++lod) {
+        const auto lid(writer.addLod(wid));
+        auto &amesh(writer.mesh(wid, lid));
+
+        if (lod < currentEnd) {
+            writeMesh(amesh, {});
+            continue;
+        }
+
+        const double txRes(baseResolution * (1 << lod));
+        const double meshRes(txRes * 3.0); // TODO: make configurable
+
+        // generate imagery
+
+        // Warping as 16 bits with nodata value set to 256.
+        // When saturated to 8 bits nodata value becomes 0 (black),
+        // plus we can extract mask.
+        const math::Matrix2 identity
+            (ublas::identity_matrix<double>(2));
+        auto ophoto(geo::GeoDataset::deriveInMemory
+                    (datasets.ophoto, srs
+                     , math::Point2(txRes, txRes)
+                     , extents, identity
+                     , GDT_UInt16, geo::NodataValue(256)));
+        datasets.ophoto.warpInto
+            (ophoto, geo::GeoDataset::Resampling::average);
+
+        const auto size(ophoto.size());
+        Image texture(size.height, size.width);
+        ophoto.readDataInto(CV_8U, texture);
+
+        Mask mask(ophoto.fetchMask());
+        imgproc::jpegBlockInpaint(texture, mask);
+
+        Texture tx;
+        tx.size = size;
+        tx = writer.addTexture(wid, lod, tx, Texture::Format::jpg);
+
+        cv::imwrite(tx.path.string(), texture
+                    , { CV_IMWRITE_JPEG_QUALITY, 90
+                        , CV_IMWRITE_PNG_COMPRESSION, 9 });
+
+        // ophoto.copy(utility::addExtension(tx.path, ".tif"), "GTiff");
+
+        // generate valid mesh
+
+        math::Size2 demSize;
+        math::Extents2 demExtents;
+
+        // compute DEM extents with added halfpixel around
+        {
+            const auto esize(math::size(extents));
+            demSize = sizeInPixels(esize, meshRes);
+            const math::Point2 realMeshRes(esize.width / demSize.width
+                                            , esize.height / demSize.height);
+
+            // add one pixel (-> half pixel at each side)
+            demSize.width += 1;
+            demSize.height += 1;
+
+            const math::Point2 end((demSize.width * realMeshRes(0)) / 2
+                                   , (demSize.height * realMeshRes(1)) / 2);
+
+            const auto center(math::center(extents));
+            demExtents.ll = center - end;
+            demExtents.ur = center + end;
+        }
+
+        auto dem(geo::GeoDataset::deriveInMemory
+                 (datasets.dem, srs
+                  , demSize
+                  , demExtents
+                  , GDT_Float64, geo::NodataValue(-1e6)));
+
+        datasets.dem.warpInto
+            (dem, geo::GeoDataset::Resampling::average);
+
+        // dem.copy(utility::addExtension(amesh.path, ".tif"), "GTiff");
+
+        // generate (raw) mesh
+        geometry::Mesh rmesh;
+        dem.exportMesh(rmesh);
+
+        // simplify it
+        simplifyMesh(rmesh, TileFacesCalculator());
+
+        // hack: do not take mask into account
+        ophoto.mask().reset(true);
+        ophoto.flush();
+
+        // texture raw mesh
+        geometry::Mesh tmesh;
+        ophoto.textureMesh(rmesh, demExtents, tmesh);
+
+        writeMesh(amesh, tmesh);
+
+        math::update(e3, math::computeExtents(tmesh.vertices));
+    }
+
+    // set extents in world coords
+    writer.setExtents(wid, transform(l2g, e3));
+
+    // done
+    writer.flush();
 }
 
 } // namespace vef

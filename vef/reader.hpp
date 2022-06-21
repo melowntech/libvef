@@ -42,9 +42,9 @@ class Archive {
 public:
     using list = std::vector<Archive>;
 
-    Archive(const boost::filesystem::path &root);
+    Archive(const boost::filesystem::path &root, bool useLocalPaths = true);
 
-    Archive(roarchive::RoArchive &archive);
+    Archive(roarchive::RoArchive &archive, bool useLocalPaths = true);
 
     const Manifest& manifest() const { return manifest_; }
 

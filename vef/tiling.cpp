@@ -449,7 +449,8 @@ Tiling::Tiling(const Archives &archives
                , const math::Size2 &optimalTextureSize
                , bool for3dCutting
                , const boost::optional<double> &resolution
-               , const boost::optional<World> &world)
+               , const boost::optional<World> &world
+               , std::size_t extraLods)
     : maxLod()
 {
     // sanity checks
@@ -473,6 +474,8 @@ Tiling::Tiling(const Archives &archives
             if (nd > depth) { depth = nd; }
         }
     }
+
+    depth += extraLods;
 
     auto lodDiff(depth - 1);
 

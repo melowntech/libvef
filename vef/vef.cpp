@@ -175,6 +175,8 @@ void saveManifest(std::ostream &os, const fs::path &path
     (void) path;
 }
 
+} // namespace
+
 void saveManifest(const fs::path &path, const Manifest &manifest
                   , const fs::path &root)
 {
@@ -184,8 +186,6 @@ void saveManifest(const fs::path &path, const Manifest &manifest
     saveManifest(f, path, manifest, root);
     f.close();
 }
-
-} // namespace
 
 ArchiveWriter::ArchiveWriter(const fs::path &root, bool overwrite
                              , bool flat)
@@ -432,6 +432,19 @@ void ArchiveWriter::setExtents(Id windowId, const math::Extents3 &extents)
 
     auto &window(manifest_.windows[windowId]);
     window.extents = extents;
+}
+
+void ArchiveWriter::setTrafo(Id windowId, const OptionalMatrix &trafo)
+{
+    if (windowId >= manifest_.windows.size()) {
+        LOGTHROW(err1, std::logic_error)
+            << "Cannot set a transofmration matrix to a window: "
+            "invalid window index "
+            << windowId << ".";
+    }
+
+    auto &window(manifest_.windows[windowId]);
+    window.trafo = trafo;
 }
 
 void ArchiveWriter::expectWindows(std::size_t size)
