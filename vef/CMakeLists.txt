@@ -1,5 +1,5 @@
 # bump version here
-set(vef_VERSION 1.8)
+set(vef_VERSION 1.9)
 
 set(vef_EXTRA_DEPENDS)
 set(vef_EXTRA_SOURCES)
@@ -42,7 +42,7 @@ else()
 endif()
 
 define_module(LIBRARY vef=${vef_VERSION}
-  DEPENDS ${vef_EXTRA_DEPENDS} geo>=1.35 math>=1.2 utility>=1.38 dbglog>=1.4
+  DEPENDS ${vef_EXTRA_DEPENDS} geo>=1.37 math>=1.10 utility>=1.41 dbglog>=1.7
   jsoncpp>=1.1
   Boost_FILESYSTEM Boost_IOSTREAMS
   )
@@ -60,7 +60,7 @@ add_library(vef STATIC ${vef_SOURCES})
 buildsys_library(vef)
 
 target_link_libraries(vef ${MODULE_LIBRARIES})
-buildsys_target_compile_definitions(vef ${MODULE_DEFINITIONS})
+target_compile_definitions(vef PRIVATE ${MODULE_DEFINITIONS})
 
 # various tools etc.
 if(MODULE_service_FOUND)
