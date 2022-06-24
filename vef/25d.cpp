@@ -365,8 +365,9 @@ struct Datasets {
 
 math::Size2 sizeInPixels(const math::Size2f &esize, double res)
 {
-    return math::Size2(int(std::round(esize.width / res))
-                       , int(std::round(esize.height / res)));
+    // make sure the computed size is at least 1x1
+    return math::Size2(std::max(1, int(std::round(esize.width / res)))
+                       , std::max(1, int(std::round(esize.height / res))));
 }
 
 Datasets createDatasets(const geo::SrsDefinition &srs
@@ -444,6 +445,8 @@ Datasets generateDatasets(const fs::path &path, const Archive &archive
     // accumulate extents and compute source LOD
     // NB: all windows should have the same LOD depth!
     Id useLod(selectLod(manifest.windows.front(), sourceLod));
+    LOG(info2) << "Using LOD " << useLod << " (from source LOD "
+               << sourceLod << ")";
     double res(baseResolution * (1 << useLod));
 
     math::Extents2 extents(math::InvalidExtents{});
@@ -570,12 +573,17 @@ void generate25d(const fs::path &path, const Archive &archive
         // Warping as 16 bits with nodata value set to 256.
         // When saturated to 8 bits nodata value becomes 0 (black),
         // plus we can extract mask.
-        const math::Matrix2 identity
-            (ublas::identity_matrix<double>(2));
+
+        const auto txSize(sizeInPixels(math::size(extents), txRes));
+        LOG(info2)
+            << std::fixed
+            << "Computed ophoto size in pixels: " << txSize
+            << ", using resolution " << txRes << ".";
+
         auto ophoto(geo::GeoDataset::deriveInMemory
                     (datasets.ophoto, srs
-                     , math::Point2(txRes, txRes)
-                     , extents, identity
+                     , txSize
+                     , extents
                      , GDT_UInt16, geo::NodataValue(256)));
         datasets.ophoto.warpInto
             (ophoto, geo::GeoDataset::Resampling::average);
@@ -606,6 +614,12 @@ void generate25d(const fs::path &path, const Archive &archive
         {
             const auto esize(math::size(extents));
             demSize = sizeInPixels(esize, meshRes);
+
+            LOG(info2)
+                << std::fixed
+                << "Computed DEM size in pixels: " << demSize
+                << ", using resolution " << meshRes << ".";
+
             const math::Point2 realMeshRes(esize.width / demSize.width
                                             , esize.height / demSize.height);
 
@@ -619,6 +633,10 @@ void generate25d(const fs::path &path, const Archive &archive
             const auto center(math::center(extents));
             demExtents.ll = center - end;
             demExtents.ur = center + end;
+
+            LOG(info2)
+                << std::fixed
+                << "Computed inflated DEM extents: " << demExtents << ".";
         }
 
         auto dem(geo::GeoDataset::deriveInMemory
