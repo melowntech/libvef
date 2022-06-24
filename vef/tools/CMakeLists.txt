@@ -21,7 +21,7 @@ if(TARGET roarchive)
 
   add_executable(vefupdate ${vefupdate_SOURCES})
   target_link_libraries(vefupdate ${MODULE_LIBRARIES})
-  buildsys_target_compile_definitions(vefupdate PRIVATE ${MODULE_DEFINITIONS})
+  target_compile_definitions(vefupdate PRIVATE ${MODULE_DEFINITIONS})
   buildsys_binary(vefupdate)
 
   if(vef-install_component)
