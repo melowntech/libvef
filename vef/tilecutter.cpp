@@ -271,7 +271,9 @@ void Cutter::windowCut(const WindowRecord &wr, const geo::CsConvertor &conv)
     warpInPlace(mesh, conv);
 
     if (mesh.empty()) {
-        LOG(info2) << "Mesh from " << wm.path << " is empty, skipping.";
+        Done done(++generated_, total_);
+        LOG(info3)
+            << "Skipped empty window " << done << ": " << window.path << ".";
         return;
     }
 
