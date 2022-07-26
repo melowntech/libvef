@@ -262,24 +262,22 @@ MeshInfo measureMeshes(const Archive &archive
 
     const auto &windows(archive.manifest().windows);
 
-    std::atomic<std::size_t> measured(0);
-
-    // OpenMP magic: create an empty CS conv and tell OpenMP to create a private
-    // instance for each thread
-    geo::CsConvertor conv;
-    UTILITY_OMP(parallel private(conv))
+    std::atomic<std::size_t> measured(0);    
+    
     {
-        // clone input cs to the local cs conv
-        conv = inConv.clone();
+        std::vector<geo::CsConvertor> conv;
+        for (int i = 0; i < omp_get_max_threads(); i++) {
+            conv.emplace_back(inConv.clone());
+        }
 
-        UTILITY_OMP(for)
-        for (std::size_t i = 0; i < windows.size(); ++i) {
+        UTILITY_OMP(parallel for default(shared))
+        for (std::int64_t i = 0; i < static_cast<std::int64_t>(windows.size()); ++i) {
             const auto &lWindows(windows[i]);
             const auto &window(lWindows.lods.front());
 
             auto a(measureMesh(archive, window.mesh
                                , windowMatrix(archive.manifest(), lWindows)
-                               , conv));
+                               , conv[omp_get_thread_num()]));
 
             // expand texture area
             auto iatlas(window.atlas.begin());

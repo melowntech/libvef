@@ -599,6 +599,10 @@ void generate25d(const fs::path &path, const Archive &archive
         tx.size = size;
         tx = writer.addTexture(wid, lod, tx, Texture::Format::jpg);
 
+#if CV_VERSION_MAJOR >= 4
+    #define CV_IMWRITE_JPEG_QUALITY cv::IMWRITE_JPEG_QUALITY
+    #define CV_IMWRITE_PNG_COMPRESSION cv::IMWRITE_PNG_COMPRESSION
+#endif
         cv::imwrite(tx.path.string(), texture
                     , { CV_IMWRITE_JPEG_QUALITY, 90
                         , CV_IMWRITE_PNG_COMPRESSION, 9 });
