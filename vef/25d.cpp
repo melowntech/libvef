@@ -549,6 +549,8 @@ void generate25d(const fs::path &path, const Archive &archive
     const auto &extents(datasets.ophoto.extents());
     const auto l2g(geo::local2geo(extents));
 
+    LOG(info2) << std::fixed << "Extents: " << extents << ".";
+
     writer.setTrafo(l2g);
 
     const auto wid(writer.addWindow(boost::none, boost::none
@@ -578,7 +580,8 @@ void generate25d(const fs::path &path, const Archive &archive
         LOG(info2)
             << std::fixed
             << "Computed ophoto size in pixels: " << txSize
-            << ", using resolution " << txRes << ".";
+            << ", using resolution " << txRes
+            << ", extents: " << extents << ".";
 
         auto ophoto(geo::GeoDataset::deriveInMemory
                     (datasets.ophoto, srs
