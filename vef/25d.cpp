@@ -603,8 +603,8 @@ void generate25d(const fs::path &path, const Archive &archive
         tx = writer.addTexture(wid, lod, tx, Texture::Format::jpg);
 
         cv::imwrite(tx.path.string(), texture
-                    , { CV_IMWRITE_JPEG_QUALITY, 90
-                        , CV_IMWRITE_PNG_COMPRESSION, 9 });
+                    , { cv::IMWRITE_JPEG_QUALITY, 90
+                        , cv::IMWRITE_PNG_COMPRESSION, 9 });
 
         // ophoto.copy(utility::addExtension(tx.path, ".tif"), "GTiff");
 

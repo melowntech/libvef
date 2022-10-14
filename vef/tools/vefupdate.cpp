@@ -120,6 +120,8 @@ private:
 
     fs::path input_;
     fs::path output_;
+
+    std::size_t depth_ = 0;
 };
 
 void VefUpdate::configuration(po::options_description &cmdline
@@ -132,6 +134,10 @@ void VefUpdate::configuration(po::options_description &cmdline
 
         ("output",  po::value(&output_)->required()
          , "Path to output VEF manifest file.")
+
+        ("depth",  po::value(&depth_)->default_value(depth_)
+         , "Keep at least given number of LODs in each window. "
+         "0 means keep all windows as they are.")
         ;
 
     pd
@@ -226,6 +232,14 @@ int VefUpdate::run()
         auto &lw(manifest.windows[i]);
         if (!lw.name) { lw.name = lw.path.filename().string(); }
         lw.extents = measure(in, lw);
+
+        if (depth_ && (lw.lods.size() > depth_)) {
+            // NB: using first element as value to allow resizing vector of
+            // non-default-constructable type... *sigh*
+            // NB: it's never used, since we are reducing the vector, not
+            // enlarging
+            lw.lods.resize(depth_, lw.lods.front());
+        }
     }
 
     // TODO: handle non-directory based paths
