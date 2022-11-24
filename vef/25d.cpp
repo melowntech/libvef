@@ -187,11 +187,11 @@ Id selectLod(const LoddedWindow &lw, int sourceLod)
     }
 
     if (sourceLod < 0) {
-        if (-sourceLod >= totalLods) {
+        if (-sourceLod > totalLods) {
             LOGTHROW(err2, std::runtime_error)
                 << lw.path << ": Invalid source LOD " << sourceLod << ".";
         }
-        return lw.lods.size() + sourceLod;
+        return totalLods + sourceLod;
     }
 
     return sourceLod;
