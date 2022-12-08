@@ -379,7 +379,7 @@ void copyGzipped(std::istream &is, const fs::path &filepath)
     f.exceptions(std::ios::badbit | std::ios::failbit);
     try {
         fs::create_directories(fs::absolute(filepath).parent_path());
-        f.open(filepath.string(), std::ios_base::out | std::ios_base::trunc);
+        f.open(filepath.string(), std::ios_base::out | std::ios_base::trunc | std::ios_base::binary);
     } catch (const std::exception&) {
         LOGTHROW(err3, std::runtime_error)
             << "Unable to save mesh to <" << filepath << ">.";
