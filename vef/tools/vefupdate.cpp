@@ -121,7 +121,8 @@ private:
     fs::path input_;
     fs::path output_;
 
-    std::size_t depth_ = 0;
+    int depth_ = 0;
+    std::set<std::size_t> lods_;
 };
 
 void VefUpdate::configuration(po::options_description &cmdline
@@ -132,12 +133,15 @@ void VefUpdate::configuration(po::options_description &cmdline
         ("input",  po::value(&input_)->required()
          , "Path to input VEF dataset (directory, tar, zip).")
 
-        ("output",  po::value(&output_)->required()
+        ("output", po::value(&output_)->required()
          , "Path to output VEF manifest file.")
 
-        ("depth",  po::value(&depth_)->default_value(depth_)
-         , "Keep at least given number of LODs in each window. "
-         "0 means keep all windows as they are.")
+        ("depth", po::value<int>()
+         , "Limit output only to given depth from fines LODs (>0)"
+         "or coarsest LODs (<0). 0 means keep all windows as they are.")
+
+        ("lod", po::value<std::vector<std::size_t>>()
+         , "Cherry pick individual output LODs.")
         ;
 
     pd
@@ -153,7 +157,18 @@ void VefUpdate::configure(const po::variables_map &vars)
     input_ = fs::absolute(input_);
     output_ = fs::absolute(output_);
 
-    (void) vars;
+    if (vars.count("lod")) {
+        if (vars.count("depth")) {
+            throw std::logic_error
+                ("Options --lod and --depth cannot be used together.");
+        }
+        const auto &lods(vars["lod"].as<std::vector<std::size_t>>());
+        lods_.insert(lods.begin(), lods.end());
+    }
+
+    if (vars.count("depth")) {
+        depth_ = vars["depth"].as<int>();
+    }
 }
 
 bool VefUpdate::help(std::ostream &out, const std::string &what) const
@@ -233,12 +248,28 @@ int VefUpdate::run()
         if (!lw.name) { lw.name = lw.path.filename().string(); }
         lw.extents = measure(in, lw);
 
-        if (depth_ && (lw.lods.size() > depth_)) {
-            // NB: using first element as value to allow resizing vector of
-            // non-default-constructable type... *sigh*
-            // NB: it's never used, since we are reducing the vector, not
-            // enlarging
-            lw.lods.resize(depth_, lw.lods.front());
+        if (!lods_.empty()) {
+            vef::Window::list lods;
+            for (auto lod : lods_) {
+                if (lod < lw.lods.size()) {
+                    lods.push_back(lw.lods[lod]);
+                }
+            }
+            std::swap(lw.lods, lods);
+        } else if (depth_ > 0) {
+            const std::size_t depth(depth_);
+            if (lw.lods.size() > depth) {
+                // NB: using first element as value to allow resizing vector of
+                // non-default-constructable type... *sigh*
+                // NB: it's never used, since we are reducing the vector, not
+                // enlarging
+                lw.lods.resize(depth, lw.lods.front());
+            }
+        } else if (depth_ < 0) {
+            const std::size_t depth(-depth_);
+            if (lw.lods.size() > depth) {
+                lw.lods.erase(lw.lods.begin(), lw.lods.end() - depth);
+            }
         }
     }
 
