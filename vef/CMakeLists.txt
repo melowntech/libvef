@@ -43,7 +43,7 @@ endif()
 
 define_module(LIBRARY vef=${vef_VERSION}
   DEPENDS ${vef_EXTRA_DEPENDS} geo>=1.37 math>=1.10 utility>=1.41 dbglog>=1.7
-  jsoncpp>=1.1
+  jsoncppwrapper>=1.1
   Boost_FILESYSTEM Boost_IOSTREAMS
   )
 
