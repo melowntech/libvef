@@ -573,13 +573,13 @@ bool convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
     switch (oMesh.format) {
     case vef::Mesh::Format::obj:
         geometry::saveAsObj(loader.mesh, oMesh.path
-                            , oMesh.mtlPath().filename().string()
+                            , oMesh.mtlPath().filename().generic_string()
                             , streamSetup);
         break;
 
     case vef::Mesh::Format::gzippedObj:
         geometry::saveAsGzippedObj(loader.mesh, oMesh.path
-                                   , oMesh.mtlPath().filename().string()
+                                   , oMesh.mtlPath().filename().generic_string()
                                    , streamSetup);
         break;
     }
@@ -706,7 +706,7 @@ void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
 
             vef::OptionalString name(iWindow.name);
             if (!name) {
-                name = fs::path(iWindow.path).filename().string();
+                name = fs::path(iWindow.path).filename().generic_string();
             }
 
             // check window extents clipping first
