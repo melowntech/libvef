@@ -215,7 +215,7 @@ math::Extents3 measure(const vef::Archive &in
     } measurer(vef::windowMatrix(in.manifest(), window));
 
     LOG(info3) << "Measuring window "
-               << window.name.value_or(window.path.string())
+               << window.name.value_or(window.path.generic_string())
                << ".";
 
     for (const auto &lod : window.lods) {
@@ -245,7 +245,7 @@ int VefUpdate::run()
     UTILITY_OMP(parallel for schedule(dynamic, 1))
     for (int i = 0; i < count; ++i) {
         auto &lw(manifest.windows[i]);
-        if (!lw.name) { lw.name = lw.path.filename().string(); }
+        if (!lw.name) { lw.name = lw.path.filename().generic_string(); }
         lw.extents = measure(in, lw);
 
         if (!lods_.empty()) {

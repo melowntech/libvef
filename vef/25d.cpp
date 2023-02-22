@@ -499,7 +499,7 @@ void writeMesh(const Mesh &amesh, const geometry::Mesh &mesh)
     // TODO: use proper setup
     geometry::ObjStreamSetup setup;
 
-    const auto mtlName(amesh.mtlPath().filename().string());
+    const auto mtlName(amesh.mtlPath().filename().generic_string());
     switch (amesh.format) {
     case vef::Mesh::Format::obj:
         // plain
