@@ -331,16 +331,18 @@ math::Extent tileVerticalExtent(const math::Extent &rootExtent
         (rootExtent.l + z * ts, rootExtent.l + (z + 1) * ts);
 }
 
-/** Inflates tile extents by given margin in all 4 directions.
+/** Inflates tile vertial extent by given margin in both directions.
  *
- *  On bordering edges (defined by borderCondition) borderMargin is used
- *  instead.
- *
- *  Margins are defined as a fraction of tile width/height.
+ * If margin is positive then it is used as a fraction of tile
+ * height. Otherwise absolute value of margin is treated as margin itself.
  */
 math::Extent inflateTileExtent(const math::Extent &extent, double margin)
 {
-    return math::Extent(extent.l - margin, extent.r + margin);
+    const auto m((margin < 0.0)
+                 ? -margin // margin itself
+                 : margin * math::size(extent)); // fraction
+
+    return math::Extent(extent.l - m, extent.r + m);
 }
 
 void Cutter::tileCut(const vts::TileId &tileId, const vts::Mesh &mesh
