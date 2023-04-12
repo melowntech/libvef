@@ -27,6 +27,7 @@
 #include <cstdlib>
 #include <string>
 #include <iostream>
+#include <regex>
 
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
@@ -125,6 +126,8 @@ private:
 
     int depth_ = 0;
     std::set<std::size_t> lods_;
+
+    boost::optional<std::regex> windowFilter_;
 };
 
 void VefUpdate::configuration(po::options_description &cmdline
@@ -144,6 +147,9 @@ void VefUpdate::configuration(po::options_description &cmdline
 
         ("lod", po::value<std::vector<std::size_t>>()
          , "Cherry pick individual output LODs.")
+
+        ("windowFilter", po::value<std::string>()
+         , "Outputs only windows whose name matches provided regex")
         ;
 
     pd
@@ -170,6 +176,10 @@ void VefUpdate::configure(const po::variables_map &vars)
 
     if (vars.count("depth")) {
         depth_ = vars["depth"].as<int>();
+    }
+
+    if (vars.count("windowFilter")) {
+        windowFilter_.emplace(vars["windowFilter"].as<std::string>());
     }
 }
 
@@ -241,13 +251,31 @@ int VefUpdate::run()
     vef::Archive in(input_, false);
 
     vef::Manifest manifest(in.manifest());
+    auto &windows(manifest.windows);
 
-    int count(manifest.windows.size());
+    // simple stuff
+    for (auto ilw(windows.begin()); ilw != windows.end(); ) {
+        auto &lw(*ilw);
+
+        if (!lw.name) { lw.name = lw.path.filename().generic_string(); }
+
+        if (windowFilter_
+            && !std::regex_search(vef::name(lw), *windowFilter_))
+        {
+            // active filter + did not match -> drop
+            ilw = windows.erase(ilw);
+        } else {
+            // keep
+            ++ilw;
+        }
+    }
+
+    int count(windows.size());
 
     UTILITY_OMP(parallel for schedule(dynamic, 1))
     for (int i = 0; i < count; ++i) {
-        auto &lw(manifest.windows[i]);
-        if (!lw.name) { lw.name = lw.path.filename().generic_string(); }
+        auto &lw(windows[i]);
+
         lw.extents = measure(in, lw);
 
         if (!lods_.empty()) {
