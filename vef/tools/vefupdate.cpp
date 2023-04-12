@@ -65,6 +65,7 @@ struct Trafo {
     Trafo() : trafo(math::identity4()) {}
 };
 
+[[maybe_unused]]
 std::ostream& operator<<(std::ostream &os, const Trafo &t)
 {
     std::string sep("");
@@ -80,6 +81,7 @@ std::ostream& operator<<(std::ostream &os, const Trafo &t)
 struct DstTrafo;
 class Convertor;
 
+[[maybe_unused]]
 std::istream& operator>>(std::istream &is, Trafo &t)
 {
     t.trafo = math::identity4();

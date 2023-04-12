@@ -367,6 +367,7 @@ DstTrafo makeDstTrafo(const math::Extents2 &extents)
     return { geo::geo2local(extents), geo::local2geo(extents) };
 }
 
+[[maybe_unused]]
 vef::OptionalMatrix makeInvDstTrafo(const math::Extents2 &extents)
 {
     if (!math::valid(extents)) { return boost::none; }

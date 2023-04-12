@@ -75,18 +75,18 @@ public:
     }
 
 private:
-    virtual void configuration(po::options_description &cmdline
-                               , po::options_description &config
-                               , po::positional_options_description &pd)
+    void configuration(po::options_description &cmdline
+                       , po::options_description &config
+                       , po::positional_options_description &pd)
         override;
 
-    virtual void configure(const po::variables_map &vars)
-        override;
+    po::ext_parser extraParser() override;
 
-    virtual bool help(std::ostream &out, const std::string &what)
-        const override;
+    void configure(const po::variables_map &vars) override;
 
-    virtual int run() override;
+    bool help(std::ostream &out, const std::string &what) const override;
+
+    int run() override;
 
     fs::path input_;
 
@@ -111,6 +111,20 @@ void VefInfo::configuration(po::options_description &cmdline
     (void) config;
 }
 
+po::ext_parser VefInfo::extraParser()
+{
+    return ([](const std::string &s) -> std::pair<std::string, std::string>
+        {
+            if (s == "--info") {
+                return { "mode", "info" };
+            }
+            if (s == "--srs") {
+                return { "mode", "srs" };
+            }
+            return {};
+        });
+}
+
 void VefInfo::configure(const po::variables_map &vars)
 {
     input_ = fs::absolute(input_);
@@ -127,24 +141,49 @@ bool VefInfo::help(std::ostream &out, const std::string &what) const
     return false;
 }
 
+void info(const vef::Archive &v)
+{
+    vef::Manifest m(v.manifest());
+    for (const auto &lw : m.windows) {
+        std::cout
+            << "window <" << name(lw) << "> @ " << lw.path << "\n"
+            << "    path " << lw.path << "\n"
+            << "    lods\n"
+        ;
+
+        for (const auto &lod : lw.lods) {
+            std::cout
+                << "        " << lod.path << "\n"
+                << "            mesh " << lod.mesh.path << "\n"
+                << "            atlas\n"
+                ;
+            for (const auto &texture : lod.atlas) {
+                std::cout
+                    << "                " << texture.size
+                    << " @ " << texture.path << "\n"
+                    ;
+            }
+        }
+    }
+}
 
 int VefInfo::run()
 {
-    vef::Archive in(input_, false);
-
-    vef::Manifest manifest(in.manifest());
+    vef::Archive in(input_, true);
 
     switch (mode_) {
-    case Mode::srs:
+    case Mode::srs: {
+        vef::Manifest manifest(in.manifest());
         if (!manifest.srs) {
             std::cerr << input_.string() << ": no SRS";
             return EXIT_FAILURE;
         }
         std::cout << *manifest.srs << '\n';
-        break;
+    } break;
 
     case Mode::info:
         // hic sunt leones
+        info(in);
         break;
     }
 
