@@ -88,9 +88,13 @@ private:
 
     int run() override;
 
+    void info(const vef::Archive &v);
+
     fs::path input_;
 
     Mode mode_ = Mode::info;
+
+    bool loadMeshes_ = false;
 };
 
 void VefInfo::configuration(po::options_description &cmdline
@@ -102,6 +106,12 @@ void VefInfo::configuration(po::options_description &cmdline
          , "Path to input VEF dataset (directory, tar, zip).")
         ("mode",  po::value(&mode_)->default_value(mode_)
          , "Operation mode (info, srs).")
+
+        ("loadMeshes"
+         ,  utility::implicit_value(&loadMeshes_, true)
+         ->default_value(false)
+         , "No mesh is not loaded when disabled. Some information might "
+         "be omitted when disabled.")
         ;
 
     pd
@@ -141,20 +151,69 @@ bool VefInfo::help(std::ostream &out, const std::string &what) const
     return false;
 }
 
-void info(const vef::Archive &v)
+
+std::size_t submeshCount(const vef::Archive &in, const vef::Window &window)
+{
+    struct SubmeshCounter : geometry::ObjParserBase {
+        SubmeshCounter() = default;
+
+        std::size_t size() const { return materials_.size(); }
+
+    private:
+        void addTexture(const Vector3d&) override {}
+        void addNormal(const Vector3d&) override {}
+        void addFacet(const Facet&) override {}
+        void materialLibrary(const std::string&) override {}
+        void useMaterial(const std::string &material) override {
+            materials_.insert(material);
+        }
+        void addVertex(const Vector3d&) override {}
+
+        std::set<std::string> materials_;
+    } loader;
+
+    auto is(in.meshIStream(window.mesh));
+    auto res(loader.parse(is->get()));
+    is->close();
+    if (!res) {
+        LOGTHROW(err2, std::runtime_error)
+            << "Unable to count submeshes in " << window.mesh.path << ".";
+    }
+    return loader.size();
+}
+
+void VefInfo::info(const vef::Archive &v)
 {
     vef::Manifest m(v.manifest());
     for (const auto &lw : m.windows) {
         std::cout
-            << "window <" << name(lw) << "> @ " << lw.path << "\n"
-            << "    path " << lw.path << "\n"
+            << "window <" << vef::name(lw) << "> @ " << lw.path << "\n"
+            << "    path " << lw.path << "\n";
+
+        if (valid(lw.extents)) {
+            std::cout
+                << std::fixed << "    extents " << lw.extents << "\n";
+        } else {
+            std::cout
+                << std::fixed << "    extents invalid\n";
+        }
+
+        std::cout
             << "    lods\n"
-        ;
+            ;
 
         for (const auto &lod : lw.lods) {
             std::cout
                 << "        " << lod.path << "\n"
-                << "            mesh " << lod.mesh.path << "\n"
+                << "            mesh " << lod.mesh.path << "\n";
+
+            if (loadMeshes_) {
+                std::cout
+                    << "                submesh count " << submeshCount(v, lod)
+                    << "\n";
+            }
+
+            std::cout
                 << "            atlas\n"
                 ;
             for (const auto &texture : lod.atlas) {
