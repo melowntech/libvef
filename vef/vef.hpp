@@ -215,7 +215,7 @@ UTILITY_GENERATE_ENUM_IO(Mesh::Format,
 )
 
 inline std::string name(const LoddedWindow &lw) {
-    return lw.name.value_or(lw.path.string());
+    return lw.name.value_or(lw.path.generic_string());
 }
 
 } // namespace vef
