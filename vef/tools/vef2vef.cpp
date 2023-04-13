@@ -711,8 +711,7 @@ void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
             }
 
             // check window extents clipping first
-            if (!checkExtents(gc, iWindow.extents, clipBorder))
-            {
+            if (!checkExtents(gc, iWindow.extents, clipBorder)){
                 LOG(info3)
                     << "Skipping empty window <" << name.value()
                     << "> (based on window extents)";
