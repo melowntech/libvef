@@ -205,22 +205,32 @@ void VefInfo::info(const vef::Archive &v)
         for (const auto &lod : lw.lods) {
             std::cout
                 << "        " << lod.path << "\n"
-                << "            mesh " << lod.mesh.path << "\n";
+                << "            mesh " << lod.mesh.path;
 
             if (loadMeshes_) {
-                std::cout
-                    << "                submesh count " << submeshCount(v, lod)
-                    << "\n";
+                const auto count(submeshCount(v, lod));
+                if (!count) {
+                    std::cout << " is empty";
+                } else {
+                    std::cout << " has " << count << " submeshes";
+                }
             }
+            std::cout << "\n";
 
-            std::cout
-                << "            atlas\n"
-                ;
-            for (const auto &texture : lod.atlas) {
+            if (lod.atlas.empty()) {
                 std::cout
-                    << "                " << texture.size
-                    << " @ " << texture.path << "\n"
+                    << "            atlas is empty\n"
                     ;
+            } else {
+                std::cout
+                    << "            atlas\n"
+                    ;
+                for (const auto &texture : lod.atlas) {
+                    std::cout
+                        << "                " << texture.size
+                        << " @ " << texture.path << "\n"
+                        ;
+                }
             }
         }
     }

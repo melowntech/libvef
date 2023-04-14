@@ -26,6 +26,7 @@
 
 #include <cstdlib>
 #include <string>
+#include <optional>
 #include <iostream>
 
 #include <ogr_api.h>
@@ -34,7 +35,6 @@
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
 #include <boost/iostreams/filter/line.hpp>
-#include <boost/optional/optional_io.hpp>
 
 #include "dbglog/dbglog.hpp"
 
@@ -140,12 +140,12 @@ private:
     fs::path output_;
     bool overwrite_ = false;
 
-    boost::optional<geo::SrsDefinition> dstSrs_;
-    boost::optional<Trafo> trafo_;
+    std::optional<geo::SrsDefinition> dstSrs_;
+    std::optional<Trafo> trafo_;
     bool verticalAdjustment_ = false;
     bool noMeshCompression_ = false;
-    boost::optional<fs::path> clipBorder_;
-    boost::optional<math::Extents2> clipExtents_;
+    std::optional<fs::path> clipBorder_;
+    std::optional<math::Extents2> clipExtents_;
 
     bool flatten_ = false;
 };
@@ -225,7 +225,7 @@ void Vef2Vef::configure(const po::variables_map &vars)
     if (vars.count("dstTrafo")) {
         trafo_ = vars["dstTrafo"].as<Trafo>();
         LOG(info3) << "Using external destination transformation: "
-                   << trafo_;
+                   << *trafo_;
     }
 
     if (vars.count("clipBorder")) {
@@ -346,7 +346,7 @@ math::Extents2 measure(const vef::Archive &in, const geo::CsConvertor &conv)
 }
 
 geo::CsConvertor makeConv(const geo::SrsDefinition &in
-                          , const boost::optional<geo::SrsDefinition> &out)
+                          , const std::optional<geo::SrsDefinition> &out)
 {
     if (out) { return { in, *out }; }
     return {};
@@ -377,6 +377,71 @@ vef::OptionalMatrix makeInvDstTrafo(const math::Extents2 &extents)
     return geo::local2geo(extents);
 }
 
+class AtlasRemapping {
+public:
+    using optional = std::optional<AtlasRemapping>;
+
+    AtlasRemapping(std::size_t count)
+        : map_(count, -1)
+    {}
+
+    /** Assigns mapping between FROM material to TO material.
+     */
+    void assign(std::size_t from, std::size_t to) {
+        if (from >= map_.size()) {
+            LOGTHROW(err2, std::runtime_error)
+                << "Invalid material remapping slot " << from << ".";
+        }
+        map_[from] = to;
+    }
+
+    /** Non-checking, can return -1 if mapping was not assigned.
+     */
+    int map(int from) const { return map_[from]; }
+
+    /** Check for valid mapping for FROM material
+     */
+    bool hasMapping(int from) const { return map(from) >= 0; }
+
+private:
+    using Map = std::vector<int>;
+    Map map_;
+};
+
+AtlasRemapping::optional remapAtlas(geometry::Mesh &mesh
+                                    , std::size_t originalAtlasSize)
+{
+    // compute histogram to see what materials are used
+    std::vector<std::size_t> histogram(originalAtlasSize, 0);
+    for (const auto &f : mesh.faces) {
+        if (f.imageId >= histogram.size()) { histogram.resize(f.imageId + 1); }
+        ++histogram[f.imageId];
+    }
+
+    AtlasRemapping ar(histogram.size());
+
+    std::size_t last(0);
+    for (std::size_t id(0); id != histogram.size(); ++id) {
+        if (histogram[id]) {
+            // at least one face references this material;
+            ar.assign(id, last++);
+        }
+    }
+
+    if (last == histogram.size()) {
+        // all materials are used in the mesh, no need to do any remapping
+        return std::nullopt;
+    }
+
+    // we need to apply remapping to mesh faces
+    for (auto &f : mesh.faces) {
+        f.imageId = ar.map(f.imageId);
+    }
+
+    // ok
+    return ar;
+}
+
 using FilterInit = std::function<void(bio::filtering_ostream&)>;
 
 void copy(std::istream &is, const fs::path &filepath
@@ -404,9 +469,19 @@ void copy(std::istream &is, const fs::path &filepath
 
 void copyAtlas(const vef::Archive &in, vef::ArchiveWriter &out
                , const vef::Window &window
-               , vef::Id oWindowId, vef::Id oLodId)
+               , vef::Id oWindowId, vef::Id oLodId
+               , const AtlasRemapping::optional &ar = std::nullopt)
 {
+    int tid(0);
     for (const auto &texture : window.atlas) {
+        if (ar && !ar->hasMapping(tid++)) {
+            // texture unused -> do not copy
+            LOG(debug)
+                << "Input texture " << texture.path
+                << " is not used in udpated mesh, skipping.";
+            continue;
+        }
+
         auto oTexture(out.addTexture(oWindowId, oLodId
                                      , texture, texture.format));
 
@@ -441,7 +516,6 @@ void copyWindow(const vef::Archive &in, vef::ArchiveWriter &out
                 , vef::Id oWindowId, vef::Id oLodId)
 {
     auto &oMesh(out.mesh(oWindowId, oLodId));
-
 
     LOG(info3) << "Copying mesh " << window.mesh.path
                << " to " << oMesh.path;
@@ -487,7 +561,7 @@ bool convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
                    , const vef::Window &window
                    , vef::Id oWindowId, vef::Id oLodId
                    , const Convertor &conv
-                   , const boost::optional<Polygons> &clipBorder
+                   , const std::optional<Polygons> &clipBorder
                    , bool saveEmpty
                    , math::Extents3 &extents)
 {
@@ -499,16 +573,19 @@ bool convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
     struct ConvertingLoader : geometry::ObjParserBase {
         const Convertor conv;
         geometry::Mesh mesh;
+        std::size_t originalAtlasSize = 0;
+        AtlasRemapping::optional atlasRemapping;
 
         unsigned int imageId = 0;
 
-        const boost::optional<Polygons> &clipBorder;
+        const std::optional<Polygons> &clipBorder;
 
         math::Extents3 extents = math::Extents3(math::InvalidExtents{});
 
-        ConvertingLoader(const Convertor &conv
-                         , const boost::optional<Polygons> &clipBorder)
-            : conv(conv), clipBorder(clipBorder)
+        ConvertingLoader(const Convertor &conv, size_t originalAtlasSize
+                         , const std::optional<Polygons> &clipBorder)
+            : conv(conv), originalAtlasSize(originalAtlasSize)
+            , clipBorder(clipBorder)
         {}
 
         void addNormal(const Vector3d&) override {}
@@ -535,6 +612,7 @@ bool convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
         void finish() {
             if (clipBorder) {
                 mesh = geometry::clip(mesh, *clipBorder);
+                atlasRemapping = remapAtlas(mesh, originalAtlasSize);
             }
 
             // compute extents in destination global coordinate system
@@ -549,7 +627,7 @@ bool convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
             return mesh.vertices.empty();
         }
 
-    } loader(conv, clipBorder);
+    } loader(conv, window.atlas.size(), clipBorder);
 
     // load and convert mesh
     {
@@ -614,7 +692,7 @@ bool convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
         break;
     }
 
-    copyAtlas(in, out, window, oWindowId, oLodId);
+    copyAtlas(in, out, window, oWindowId, oLodId, loader.atlasRemapping);
 
     return true;
 }
@@ -646,7 +724,7 @@ DstTrafo chooseTrafo(const DstTrafo &t1, const vef::OptionalMatrix &t2)
 }
 
 bool checkExtents(const geo::CsConvertor &conv, const math::Extents3 &e3
-                  , const boost::optional<Polygons> &clipBorder)
+                  , const std::optional<Polygons> &clipBorder)
 {
     // clipping and valid extents? no -> cannot tell
     if (!(clipBorder && math::valid(e3))) { return true; }
@@ -715,7 +793,7 @@ void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
 
     const auto &iManifest(in.manifest());
 
-    // make room for input window
+    // make room for input windows so we need only synchronize window allocation
     out.expectWindows(iManifest.windows.size());
 
     UTILITY_OMP(parallel)
@@ -783,6 +861,8 @@ void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
                         break;
                     }
                 } else {
+                    // just reuse extents
+                    extents = iWindow.extents;
                     copyWindow(in, out, iLod, oWindowId, oLodId);
                 }
 
@@ -809,7 +889,6 @@ void Vef2Vef::convert(const vef::Archive &in, vef::ArchiveWriter &out)
     for (const auto windowId : windowsToDelete) {
         out.deleteWindow(windowId);
     }
-
 }
 
 int Vef2Vef::run()

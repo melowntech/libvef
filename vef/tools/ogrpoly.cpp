@@ -241,12 +241,12 @@ Polygons loadPolygons(const boost::filesystem::path &ogrDataset
     return polygons;
 }
 
-boost::optional<Polygons>
-loadPolygons(const boost::optional<boost::filesystem::path> &ogrDataset
+std::optional<Polygons>
+loadPolygons(const std::optional<boost::filesystem::path> &ogrDataset
              , const geo::SrsDefinition &srs)
 {
     if (ogrDataset) { return loadPolygons(*ogrDataset, srs); }
-    return boost::none;
+    return std::nullopt;
 }
 
 Polygons polygonsFromExtents(const math::Extents2 &extents)
@@ -265,9 +265,9 @@ Polygons polygonsFromExtents(const math::Extents2 &extents)
     return polygons;
 }
 
-boost::optional<Polygons>
-polygonsFromExtents(const boost::optional<math::Extents2> &extents)
+std::optional<Polygons>
+polygonsFromExtents(const std::optional<math::Extents2> &extents)
 {
     if (extents) { return polygonsFromExtents(*extents); }
-    return boost::none;
+    return std::nullopt;
 }
