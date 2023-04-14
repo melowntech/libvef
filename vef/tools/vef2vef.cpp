@@ -30,8 +30,10 @@
 
 #include <ogr_api.h>
 
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
+#include <boost/iostreams/filter/line.hpp>
 #include <boost/optional/optional_io.hpp>
 
 #include "dbglog/dbglog.hpp"
@@ -59,6 +61,7 @@
 
 namespace po = boost::program_options;
 namespace fs = boost::filesystem;
+namespace ba = boost::algorithm;
 namespace bio = boost::iostreams;
 
 namespace {
@@ -374,29 +377,10 @@ vef::OptionalMatrix makeInvDstTrafo(const math::Extents2 &extents)
     return geo::local2geo(extents);
 }
 
-void copyGzipped(std::istream &is, const fs::path &filepath)
-{
-    std::ofstream f;
-    f.exceptions(std::ios::badbit | std::ios::failbit);
-    try {
-        fs::create_directories(fs::absolute(filepath).parent_path());
-        f.open(filepath.string(), std::ios_base::out | std::ios_base::trunc | std::ios_base::binary);
-    } catch (const std::exception&) {
-        LOGTHROW(err3, std::runtime_error)
-            << "Unable to save mesh to <" << filepath << ">.";
-    }
+using FilterInit = std::function<void(bio::filtering_ostream&)>;
 
-    bio::filtering_ostream gzipped;
-    gzipped.push(bio::gzip_compressor(bio::gzip_params(9), 1 << 16));
-    gzipped.push(f);
-
-    // copy data from source input stream to output
-    gzipped << is.rdbuf();
-
-    gzipped.flush();
-}
-
-void copy(std::istream &is, const fs::path &filepath)
+void copy(std::istream &is, const fs::path &filepath
+          , FilterInit filterInit = {})
 {
     std::ofstream f;
     f.exceptions(std::ios::badbit | std::ios::failbit);
@@ -408,9 +392,14 @@ void copy(std::istream &is, const fs::path &filepath)
             << "Unable to save mesh to <" << filepath << ">.";
     }
 
+    bio::filtering_ostream fos;
+    if (filterInit) { filterInit(fos); }
+    fos.push(f);
+
     // copy data from source input stream to output
-    f << is.rdbuf();
-    f.flush();
+    fos << is.rdbuf();
+
+    fos.flush();
 }
 
 void copyAtlas(const vef::Archive &in, vef::ArchiveWriter &out
@@ -431,23 +420,63 @@ void copyAtlas(const vef::Archive &in, vef::ArchiveWriter &out
     }
 }
 
+class MtllibRewriter : public bio::line_filter {
+public:
+    std::string mtllib;
+    MtllibRewriter(std::string mtllib) : mtllib(std::move(mtllib)) {}
+
+private:
+    std::string do_filter(const std::string &line) override {
+        if (!ba::starts_with(line, "mtllib ")) { return line; }
+        return "mtllib " + mtllib;
+    };
+};
+
+inline std::string mtllib(const vef::Mesh &mesh) {
+    return mesh.mtlPath().filename().generic_string();
+}
+
 void copyWindow(const vef::Archive &in, vef::ArchiveWriter &out
                 , const vef::Window &window
                 , vef::Id oWindowId, vef::Id oLodId)
 {
     auto &oMesh(out.mesh(oWindowId, oLodId));
 
+
     LOG(info3) << "Copying mesh " << window.mesh.path
                << " to " << oMesh.path;
+
     {
         auto is(in.meshIStream(window.mesh));
+
+        FilterInit finit;
+
+        // plug-in mtllib rewriter if input and output mtllib filenames differ
+        if (mtllib(window.mesh) != mtllib(oMesh)) {
+            finit = [finit=std::move(finit), mtllib=mtllib(oMesh)]
+                (bio::filtering_ostream &fos)
+            {
+                if (finit) { finit(fos); }
+                fos.push(MtllibRewriter(mtllib));
+            };
+        }
+
         switch (oMesh.format) {
         case vef::Mesh::Format::obj:
-            copy(is->get(), oMesh.path); break;
+            // no filter needef
+            break;
 
         case vef::Mesh::Format::gzippedObj:
-            copyGzipped(is->get(), oMesh.path); break;
+            // plug-in gzip compressor
+            finit = [finit=std::move(finit)](bio::filtering_ostream &fos) {
+                if (finit) { finit(fos); }
+                fos.push(bio::gzip_compressor(bio::gzip_params(9), 1 << 16));
+            };
+            break;
         }
+
+        // copy
+        copy(is->get(), oMesh.path, finit);
         is->close();
     }
 
