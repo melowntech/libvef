@@ -267,7 +267,7 @@ MeshInfo measureMeshes(const Archive &archive
     // OpenMP magic: create an empty CS conv and tell OpenMP to create a private
     // instance for each thread
     geo::CsConvertor conv;
-    UTILITY_OMP(parallel private(conv))
+    UTILITY_OMP(parallel private(conv) default(shared))
     {
         // clone input cs to the local cs conv
         conv = inConv.clone();
