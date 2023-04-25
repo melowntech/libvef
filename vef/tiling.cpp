@@ -262,7 +262,7 @@ MeshInfo measureMeshes(const Archive &archive
 
     const auto &windows(archive.manifest().windows);
 
-    std::atomic<std::size_t> measured(0);
+    //std::atomic<std::size_t> measured(0);
 
     // OpenMP magic: create an empty CS conv and tell OpenMP to create a private
     // instance for each thread
@@ -294,8 +294,8 @@ MeshInfo measureMeshes(const Archive &archive
             UTILITY_OMP(critical(vef_tiling_measureMeshes_1))
                 mi.update(a);
 
-            Done done(++measured, windows.size());
-            LOG(info3) << "Measured " << done << " meshes.";
+            //Done done(++measured, windows.size());
+            //LOG(info3) << "Measured " << done << " meshes.";
         }
     }
     return mi;
