@@ -267,12 +267,12 @@ MeshInfo measureMeshes(const Archive &archive
     // OpenMP magic: create an empty CS conv and tell OpenMP to create a private
     // instance for each thread
     // geo::CsConvertor conv;
-    // UTILITY_OMP(parallel)
+    UTILITY_OMP(parallel)
     {
         // clone input cs to the local cs conv
         geo::CsConvertor conv = inConv.clone();
 
-        // UTILITY_OMP(for)
+        UTILITY_OMP(for)
         for (int i = 0; i < static_cast<int>(windows.size()); ++i) {
         // for (std::size_t i = 0; i < windows.size(); ++i) {
             const auto &lWindows(windows[i]);
@@ -291,7 +291,7 @@ MeshInfo measureMeshes(const Archive &archive
                 sm.texture *= size.height;
             }
 
-            // UTILITY_OMP(critical(vef_tiling_measureMeshes_1))
+            UTILITY_OMP(critical(vef_tiling_measureMeshes_1))
                 mi.update(a);
 
             //Done done(++measured, windows.size());
