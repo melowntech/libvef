@@ -298,6 +298,42 @@ void ArchiveWriter::deleteWindow(Id windowId)
     manifest_.windows.erase(manifest_.windows.begin() + windowId);
 }
 
+namespace {
+
+inline char sanitize(char c) {
+    // safe alpha-numeric characters
+    if (std::isalnum(c)) { return c; }
+
+    // other safe chars
+    switch (c) {
+    case '-':
+    case '.':
+        return c;
+    }
+
+    // everything else -> underscore
+    return '_';
+}
+
+std::string flatten(Id windowId, const LoddedWindow &window
+                    , const std::string &filename)
+{
+    if (!window.name) {
+        LOGTHROW(err1, std::logic_error)
+            << "Cannot flatten nameless window " << windowId
+            << ".";
+    }
+
+    std::ostringstream os;
+
+    for (auto c : *window.name) { os << sanitize(c); }
+
+    os << '-' << filename;
+    return os.str();
+}
+
+} // namespace
+
 Id ArchiveWriter::addLod(Id windowId, const OptionalString &path
                          , Mesh::Format meshFormat)
 {
@@ -326,12 +362,7 @@ Id ArchiveWriter::addLod(Id windowId, const OptionalString &path
     std::string meshPath(str(boost::format(constants::MeshNameFormat)
                              % asExtension(meshFormat)));
     if (flat_) {
-        if (!window.name) {
-            LOGTHROW(err1, std::logic_error)
-                << "Cannot flatten nameless window " << windowId
-                << ".";
-        }
-        meshPath = *window.name + "-" + meshPath;
+        meshPath = flatten(windowId, window, meshPath);
     }
 
     windowLod.mesh.format = meshFormat;
@@ -392,12 +423,7 @@ Texture ArchiveWriter::addTexture(Id windowId, Id lod, const Texture &t
     std::string texturePath(str(boost::format(constants::TextureNameFormat)
                                 % index % asExtension(format)));
     if (flat_) {
-        if (!window.name) {
-            LOGTHROW(err1, std::logic_error)
-                << "Cannot flatten nameless window " << windowId
-                << ".";
-        }
-        texturePath = *window.name + "-" + texturePath;
+        texturePath = flatten(windowId, window, texturePath);
     }
 
     tt.path = (windowLod.path / texturePath);

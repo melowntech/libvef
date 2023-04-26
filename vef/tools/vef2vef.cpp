@@ -678,6 +678,9 @@ bool convertWindow(const vef::Archive &in, vef::ArchiveWriter &out
 
     const StreamSetup streamSetup(max > 1e5);
 
+    // make sure path exists
+    fs::create_directories(fs::absolute(oMesh.path).parent_path());
+
     switch (oMesh.format) {
     case vef::Mesh::Format::obj:
         geometry::saveAsObj(loader.mesh, oMesh.path
