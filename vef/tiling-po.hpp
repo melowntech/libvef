@@ -36,7 +36,7 @@ namespace vef {
 
 void worldConfiguration(boost::program_options::options_description &od);
 
-void configureWorld(boost::optional<vef::World> &world
+void configureWorld(std::optional<vef::World> &world
                     , const boost::program_options::variables_map &vars);
 
 } // namespace vef

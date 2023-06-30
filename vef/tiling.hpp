@@ -31,7 +31,7 @@
  *  kind of tiling hierarchy. It makes sense to put tiling support along VEF.
  */
 
-#include <boost/optional.hpp>
+#include <optional>
 
 #include "reader.hpp"
 
@@ -71,22 +71,22 @@ struct Tiling {
     Tiling(const Archive &archive
            , const math::Size2 &optimalTextureSize
            , bool for3dCutting = false
-           , const boost::optional<double> &resolution = boost::none
-           , const boost::optional<World> &world = boost::none
+           , const std::optional<double> &resolution = std::nullopt
+           , const std::optional<World> &world = std::nullopt
            , std::size_t extraLods = 0);
 
     Tiling(const Archive::list &archives
            , const math::Size2 &optimalTextureSize
            , bool for3dCutting = false
-           , const boost::optional<double> &resolution = boost::none
-           , const boost::optional<World> &world = boost::none
+           , const std::optional<double> &resolution = std::nullopt
+           , const std::optional<World> &world = std::nullopt
            , std::size_t extraLods = 0);
 
     Tiling(const Archives &archives
            , const math::Size2 &optimalTextureSize
            , bool for3dCutting = false
-           , const boost::optional<double> &resolution = boost::none
-           , const boost::optional<World> &world = boost::none
+           , const std::optional<double> &resolution = std::nullopt
+           , const std::optional<World> &world = std::nullopt
            , std::size_t extraLods = 0);
 
     Tiling(std::ostream &os);
@@ -99,8 +99,8 @@ struct Tiling {
 inline Tiling::Tiling(const Archive &archive
                       , const math::Size2 &optimalTextureSize
                       , bool for3dCutting
-                      , const boost::optional<double> &resolution
-                      , const boost::optional<World> &world
+                      , const std::optional<double> &resolution
+                      , const std::optional<World> &world
                       , std::size_t extraLods)
     : Tiling(Archives({std::cref(archive)})
              , optimalTextureSize, for3dCutting, resolution, world
@@ -110,8 +110,8 @@ inline Tiling::Tiling(const Archive &archive
 inline Tiling::Tiling(const Archive::list &archives
                       , const math::Size2 &optimalTextureSize
                       , bool for3dCutting
-                      , const boost::optional<double> &resolution
-                      , const boost::optional<World> &world
+                      , const std::optional<double> &resolution
+                      , const std::optional<World> &world
                       , std::size_t extraLods)
     : Tiling(Archives(archives.begin(), archives.end())
              , optimalTextureSize, for3dCutting, resolution, world
