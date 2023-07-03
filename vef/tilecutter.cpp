@@ -72,6 +72,9 @@ WindowRecord::list windowRecordList(const vef::Archive &archive
     for (const auto &lw : archive.manifest().windows) {
         const auto trafo(vef::windowMatrix(archive.manifest(), lw));
         auto lod(config.maxLod);
+        const auto topLod(config.tileExtents
+                          ? config.tileExtents->lod
+                          : 0);
 
         std::size_t bLod(0);
         std::size_t eLod(lw.lods.size());
@@ -89,7 +92,10 @@ WindowRecord::list windowRecordList(const vef::Archive &archive
 
         std::size_t i(0);
         for (const auto &w : lw.lods) {
-            // TODO: apply tileExtents lod here as well
+            if (lod < topLod) {
+                // tile extents limit
+                break;
+            }
             if ((i >= bLod) && (i < eLod)) {
                 list.emplace_back(w, lod, trafo);
             }
