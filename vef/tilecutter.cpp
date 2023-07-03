@@ -76,8 +76,6 @@ WindowRecord::list windowRecordList(const vef::Archive &archive
         std::size_t bLod(0);
         std::size_t eLod(lw.lods.size());
 
-        // TODO: apply tileExtents lod as well
-
         if (config.lodDepth > 0) {
             // >0 -> only first lodDepth lods
             eLod = std::min(std::size_t(config.lodDepth), eLod);
@@ -91,6 +89,7 @@ WindowRecord::list windowRecordList(const vef::Archive &archive
 
         std::size_t i(0);
         for (const auto &w : lw.lods) {
+            // TODO: apply tileExtents lod here as well
             if ((i >= bLod) && (i < eLod)) {
                 list.emplace_back(w, lod, trafo);
             }

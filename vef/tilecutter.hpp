@@ -96,7 +96,8 @@ struct TileCutterConfig {
      */
     std::optional<geo::SrsDefinition> dstSrs;
 
-    /** Maximum lod to process from inpout
+    /** Archive's original data LOD i mapped to privided `maxLod` which defines
+     *  finest tiles.
      */
     int maxLod = 0;
 
