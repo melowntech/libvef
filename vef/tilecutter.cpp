@@ -65,24 +65,26 @@ struct WindowRecord {
 };
 
 WindowRecord::list windowRecordList(const vef::Archive &archive
-                                    , vts::Lod maxLod
-                                    , int lodDepth)
+                                    , const TileCutterConfig &config)
 {
     WindowRecord::list list;
 
     for (const auto &lw : archive.manifest().windows) {
         const auto trafo(vef::windowMatrix(archive.manifest(), lw));
-        auto lod(maxLod);
+        auto lod(config.maxLod);
+        const auto topLod(config.tileExtents
+                          ? config.tileExtents->lod
+                          : 0);
 
         std::size_t bLod(0);
         std::size_t eLod(lw.lods.size());
 
-        if (lodDepth > 0) {
+        if (config.lodDepth > 0) {
             // >0 -> only first lodDepth lods
-            eLod = std::min(std::size_t(lodDepth), eLod);
-        } else if (lodDepth < 0) {
+            eLod = std::min(std::size_t(config.lodDepth), eLod);
+        } else if (config.lodDepth < 0) {
             // <0 -> only last lodDepth lods
-            const std::size_t ld(-lodDepth);
+            const std::size_t ld(-config.lodDepth);
             if (ld < eLod) {
                 bLod = eLod - ld;
             }
@@ -90,6 +92,10 @@ WindowRecord::list windowRecordList(const vef::Archive &archive
 
         std::size_t i(0);
         for (const auto &w : lw.lods) {
+            if (lod < topLod) {
+                // tile extents limit
+                break;
+            }
             if ((i >= bLod) && (i < eLod)) {
                 list.emplace_back(w, lod, trafo);
             }
@@ -146,20 +152,35 @@ operator<<(std::basic_ostream<CharT, Traits> &os, const Done &d)
     return os << '#' << d.count;
 }
 
+math::Extents2 horizontalExtents(const TileCutterConfig &config)
+{
+    return std::visit([](const auto &e) { return math::extents2(e); }
+        , config.worldExtents);
+}
+
+math::Extent verticalExtent(const TileCutterConfig &config)
+{
+    return std::visit([](const auto &e) { return math::extent(e, 2); }
+        , config.worldExtents);
+}
+
+vts::Ranges computeClipRanges(const TileCutterConfig &config)
+{
+    if (config.tileExtents) {
+        return vts::Ranges(*config.tileExtents, config.maxLod);
+    }
+    return {};
+}
+
 class Cutter {
 public:
     Cutter(tools::TmpTileset &ts, const vef::Archive &archive
-           , const math::Extents2 &worldExtents
-           , const math::Extent &verticalExtent
-           , const boost::optional<geo::SrsDefinition> &dstSrs
-           , int maxLod, double clipMargin
-           , int lodDepth)
-        : ts_(ts), archive_(archive)
-        , worldExtents_(worldExtents)
-        , verticalExtent_(verticalExtent)
-        , dstSrs_(dstSrs)
-        , clipMargin_(clipMargin)
-        , windows_(windowRecordList(archive_, maxLod, lodDepth))
+           , const TileCutterConfig &config)
+        : ts_(ts), archive_(archive), config_(config)
+        , worldExtents_(horizontalExtents(config_))
+        , verticalExtent_(verticalExtent(config_))
+        , clipRanges_(computeClipRanges(config_))
+        , windows_(windowRecordList(archive_, config))
         , generated_(), total_(windows_.size())
     {
         LOG(info3) << "Cutting " << archive.path() << " into tiles.";
@@ -181,10 +202,10 @@ private:
 
     tools::TmpTileset &ts_;
     const vef::Archive &archive_;
-    const math::Extents2& worldExtents_;
-    const math::Extent& verticalExtent_;
-    const boost::optional<geo::SrsDefinition> &dstSrs_;
-    const double clipMargin_;
+    const TileCutterConfig config_;
+    const math::Extents2 worldExtents_;
+    const math::Extent verticalExtent_;
+    const vts::Ranges clipRanges_;
     WindowRecord::list windows_;
     std::atomic<std::size_t> generated_;
     std::size_t total_;
@@ -192,13 +213,13 @@ private:
 
 geo::CsConvertor Cutter::vef2world() const
 {
-    if (!dstSrs_) { return {}; }
-    return geo::CsConvertor(archive_.manifest().srs.value(), *dstSrs_);
+    if (!config_.dstSrs) { return {}; }
+    return geo::CsConvertor(archive_.manifest().srs.value()
+                            , *config_.dstSrs);
 }
 
 void Cutter::operator()(/**vt::ExternalProgress &progress*/)
 {
-    boost::optional<geo::CsConvertor> convertor;
     UTILITY_OMP(parallel)
     {
         const auto convertor(vef2world());
@@ -244,9 +265,20 @@ vts::TileSpan computeVerticalTileSpan(const math::Extent &rootExtent
     return s;
 }
 
-vts::TileRange computeTileRange(const math::Extents2 &worldExtents
-                                , vts::Lod lod
-                                , const math::Extents2 &meshExtents)
+std::optional<vts::TileRange>
+clipRange(const vts::Ranges &ranges, vts::Lod lod)
+{
+    if (const auto range = ranges.tileRange(lod, std::nothrow)) {
+        return *range;
+    }
+    return std::nullopt;
+}
+
+vts::TileRange
+computeTileRange(const math::Extents2 &worldExtents
+                 , vts::Lod lod
+                 , const math::Extents2 &meshExtents
+                 , const std::optional<vts::TileRange> &clipRange)
 {
     vts::TileRange r(math::InvalidExtents{});
     const auto ts(vts::tileSize(worldExtents, lod));
@@ -258,12 +290,27 @@ vts::TileRange computeTileRange(const math::Extents2 &worldExtents
                 , (origin(1) - p(1)) / ts.height));
     }
 
+    // apply tile extents at given LOD
+    if (clipRange) {
+        r = vts::tileRangesIntersect(r, *clipRange, std::nothrow);
+    }
+
     return r;
 }
 
 void Cutter::windowCut(const WindowRecord &wr, const geo::CsConvertor &conv)
 {
     const auto &window(*wr.window);
+
+    if (config_.tileExtents && (wr.lod < config_.tileExtents->lod)) {
+        // FIXME: this should be checked in generation of window records
+        Done done(++generated_, total_);
+        LOG(info3)
+            << "Skipped window outside of configured tile extents "
+            << done << ": " << window.path<< ".";
+        return;
+    }
+
     const auto &wm(window.mesh);
     LOG(info2) << "Cutting window mesh from " << wm.path << ".";
     auto mesh(vts::loadMeshFromObj(*archive_.meshIStream(wm), wm.path));
@@ -285,7 +332,17 @@ void Cutter::windowCut(const WindowRecord &wr, const geo::CsConvertor &conv)
 
     const auto atlas(loadAtlas(archive_, window));
 
-    auto tr(computeTileRange(worldExtents_, wr.lod, computeExtents(mesh)));
+    auto tr(computeTileRange
+            (worldExtents_, wr.lod, computeExtents(mesh)
+             , clipRange(clipRanges_, wr.lod)));
+    if (!math::valid(tr)) {
+        Done done(++generated_, total_);
+        LOG(info3)
+            << "Skipped window outside of configured tile extents "
+            << done << ": " << window.path<< ".";
+        return;
+    }
+
     LOG(info2) << "Splitting window " << window.path
                << " to tiles in " << wr.lod << "/" << tr << ".";
     splitToTiles(wr.lod, tr, mesh, atlas);
@@ -350,7 +407,7 @@ void Cutter::tileCut(const vts::TileId &tileId, const vts::Mesh &mesh
 {
     auto extents
         (vts::inflateTileExtents
-         (tileExtents(worldExtents_, tileId), clipMargin_));
+         (tileExtents(worldExtents_, tileId), config_.clipMargin));
 
     vts::Mesh clipped;
     vts::opencv::Atlas clippedAtlas(0); // PNG!
@@ -369,7 +426,7 @@ void Cutter::tileCut(const vts::TileId &tileId, const vts::Mesh &mesh
             for (auto i(ts.l); i <= ts.r; ++i) {
                 auto ve(inflateTileExtent
                         (tileVerticalExtent(verticalExtent_, tileId.lod, i)
-                         , clipMargin_));
+                         , config_.clipMargin));
 
                 auto vm(vts::clip(m, ve));
                 if (vm.empty()) { continue; }
@@ -398,24 +455,41 @@ void Cutter::tileCut(const vts::TileId &tileId, const vts::Mesh &mesh
 
 void cutToTiles(tools::TmpTileset &ts, const vef::Archive &archive
                 , const math::Extents2 &worldExtents
-                , const boost::optional<geo::SrsDefinition> &dstSrs
+                , const std::optional<geo::SrsDefinition> &dstSrs
                 , int maxLod, double clipMargin
                 , int lodDepth)
 {
-    Cutter(ts, archive, worldExtents
-           , math::extent(worldExtents, 2), dstSrs
-           , maxLod, clipMargin, lodDepth)();
+    TileCutterConfig config;
+    config.worldExtents = worldExtents;
+    config.dstSrs = dstSrs;
+    config.maxLod = maxLod;
+    config.clipMargin = clipMargin;
+    config.lodDepth = lodDepth;
+
+    Cutter(ts, archive, config)();
 }
 
 void cutToTiles(tools::TmpTileset &ts, const vef::Archive &archive
                 , const math::Extents3 &worldExtents
-                , const boost::optional<geo::SrsDefinition> &dstSrs
+                , const std::optional<geo::SrsDefinition> &dstSrs
                 , int maxLod, double clipMargin
                 , int lodDepth)
 {
-    Cutter(ts, archive, math::extents2(worldExtents)
-           , math::extent(worldExtents, 2), dstSrs
-           , maxLod, clipMargin, lodDepth)();
+    TileCutterConfig config;
+    config.worldExtents = worldExtents;
+    config.dstSrs = dstSrs;
+    config.maxLod = maxLod;
+    config.clipMargin = clipMargin;
+    config.lodDepth = lodDepth;
+
+    Cutter(ts, archive, config)();
+}
+
+void cutToTiles(vtslibs::vts::tools::TmpTileset &ts
+                , const vef::Archive &archive
+                , const TileCutterConfig &config)
+{
+    Cutter(ts, archive, config)();
 }
 
 } // namespace vef
