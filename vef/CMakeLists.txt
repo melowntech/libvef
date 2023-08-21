@@ -1,5 +1,5 @@
 # bump version here
-set(vef_VERSION 1.9)
+set(vef_VERSION 1.11)
 
 set(vef_EXTRA_DEPENDS)
 set(vef_EXTRA_SOURCES)
@@ -42,7 +42,7 @@ else()
 endif()
 
 define_module(LIBRARY vef=${vef_VERSION}
-  DEPENDS ${vef_EXTRA_DEPENDS} geo>=1.37 math>=1.10 utility>=1.41 dbglog>=1.7
+  DEPENDS ${vef_EXTRA_DEPENDS} geo>=1.37 math>=1.11 utility>=1.41 dbglog>=1.7
   jsoncpp>=1.1
   Boost_FILESYSTEM Boost_IOSTREAMS
   )

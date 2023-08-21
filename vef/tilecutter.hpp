@@ -32,6 +32,9 @@
  *  VEF.
  */
 
+#include <optional>
+#include <variant>
+
 #include "vts-libs/tools-support/tmptileset.hpp"
 
 #include "reader.hpp"
@@ -56,7 +59,7 @@ namespace vef {
 void cutToTiles(vtslibs::vts::tools::TmpTileset &ts
                 , const vef::Archive &archive
                 , const math::Extents2 &worldExtents
-                , const boost::optional<geo::SrsDefinition> &dstSrs
+                , const std::optional<geo::SrsDefinition> &dstSrs
                 , int maxLod, double clipMargin = 1.0 / 128.
                 , int lodDepth = 0);
 
@@ -78,9 +81,46 @@ void cutToTiles(vtslibs::vts::tools::TmpTileset &ts
 void cutToTiles(vtslibs::vts::tools::TmpTileset &ts
                 , const vef::Archive &archive
                 , const math::Extents3 &worldExtents
-                , const boost::optional<geo::SrsDefinition> &dstSrs
+                , const std::optional<geo::SrsDefinition> &dstSrs
                 , int maxLod, double clipMargin = 1.0 / 128.
                 , int lodDepth = 0);
+
+using WorldExtents = std::variant<math::Extents2, math::Extents3>;
+
+struct TileCutterConfig {
+    /** Extents2 (for quadro division) or Extents3 (for octo division)
+     */
+    WorldExtents worldExtents;
+
+    /** Destination SRS, if different than input srs.
+     */
+    std::optional<geo::SrsDefinition> dstSrs;
+
+    /** Archive's original data LOD i mapped to privided `maxLod` which defines
+     *  finest tiles.
+     */
+    int maxLod = 0;
+
+    /** Clipping margin:
+     * >=0: margin = tileSize * clipMargin  # fraction of tile size
+     *  <0: margin = -clipMargin            # absolute dimension
+     */
+    double clipMargin = 1.0 / 128.;
+
+    /** =0: nothing happens
+     *  >0: only bottom lodDepth lods are processed from the input
+     *  <0: only top -lodDepth lods are processed from the input
+     */
+    int lodDepth = 0;
+
+    /** Limit output to given tile subtree if set.
+     */
+    std::optional<vtslibs::vts::LodTileRange> tileExtents;
+};
+
+void cutToTiles(vtslibs::vts::tools::TmpTileset &ts
+                , const vef::Archive &archive
+                , const TileCutterConfig &config);
 
 } // namespace vef
 

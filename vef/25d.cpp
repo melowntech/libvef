@@ -187,11 +187,11 @@ Id selectLod(const LoddedWindow &lw, int sourceLod)
     }
 
     if (sourceLod < 0) {
-        if (-sourceLod >= totalLods) {
+        if (-sourceLod > totalLods) {
             LOGTHROW(err2, std::runtime_error)
                 << lw.path << ": Invalid source LOD " << sourceLod << ".";
         }
-        return lw.lods.size() + sourceLod;
+        return totalLods + sourceLod;
     }
 
     return sourceLod;
@@ -499,7 +499,7 @@ void writeMesh(const Mesh &amesh, const geometry::Mesh &mesh)
     // TODO: use proper setup
     geometry::ObjStreamSetup setup;
 
-    const auto mtlName(amesh.mtlPath().filename().string());
+    const auto mtlName(amesh.mtlPath().filename().generic_string());
     switch (amesh.format) {
     case vef::Mesh::Format::obj:
         // plain
@@ -549,6 +549,8 @@ void generate25d(const fs::path &path, const Archive &archive
     const auto &extents(datasets.ophoto.extents());
     const auto l2g(geo::local2geo(extents));
 
+    LOG(info2) << std::fixed << "Extents: " << extents << ".";
+
     writer.setTrafo(l2g);
 
     const auto wid(writer.addWindow(boost::none, boost::none
@@ -578,7 +580,8 @@ void generate25d(const fs::path &path, const Archive &archive
         LOG(info2)
             << std::fixed
             << "Computed ophoto size in pixels: " << txSize
-            << ", using resolution " << txRes << ".";
+            << ", using resolution " << txRes
+            << ", extents: " << extents << ".";
 
         auto ophoto(geo::GeoDataset::deriveInMemory
                     (datasets.ophoto, srs
@@ -604,8 +607,8 @@ void generate25d(const fs::path &path, const Archive &archive
     #define CV_IMWRITE_PNG_COMPRESSION cv::IMWRITE_PNG_COMPRESSION
 #endif
         cv::imwrite(tx.path.string(), texture
-                    , { CV_IMWRITE_JPEG_QUALITY, 90
-                        , CV_IMWRITE_PNG_COMPRESSION, 9 });
+                    , { cv::IMWRITE_JPEG_QUALITY, 90
+                        , cv::IMWRITE_PNG_COMPRESSION, 9 });
 
         // ophoto.copy(utility::addExtension(tx.path, ".tif"), "GTiff");
 

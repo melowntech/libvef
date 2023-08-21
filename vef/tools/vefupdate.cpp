@@ -27,6 +27,7 @@
 #include <cstdlib>
 #include <string>
 #include <iostream>
+#include <regex>
 
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
@@ -65,6 +66,7 @@ struct Trafo {
     Trafo() : trafo(math::identity4()) {}
 };
 
+[[maybe_unused]]
 std::ostream& operator<<(std::ostream &os, const Trafo &t)
 {
     std::string sep("");
@@ -80,6 +82,7 @@ std::ostream& operator<<(std::ostream &os, const Trafo &t)
 struct DstTrafo;
 class Convertor;
 
+[[maybe_unused]]
 std::istream& operator>>(std::istream &is, Trafo &t)
 {
     t.trafo = math::identity4();
@@ -121,7 +124,10 @@ private:
     fs::path input_;
     fs::path output_;
 
-    std::size_t depth_ = 0;
+    int depth_ = 0;
+    std::set<std::size_t> lods_;
+
+    boost::optional<std::regex> windowFilter_;
 };
 
 void VefUpdate::configuration(po::options_description &cmdline
@@ -132,12 +138,18 @@ void VefUpdate::configuration(po::options_description &cmdline
         ("input",  po::value(&input_)->required()
          , "Path to input VEF dataset (directory, tar, zip).")
 
-        ("output",  po::value(&output_)->required()
+        ("output", po::value(&output_)->required()
          , "Path to output VEF manifest file.")
 
-        ("depth",  po::value(&depth_)->default_value(depth_)
-         , "Keep at least given number of LODs in each window. "
-         "0 means keep all windows as they are.")
+        ("depth", po::value<int>()
+         , "Limit output only to given depth from fines LODs (>0)"
+         "or coarsest LODs (<0). 0 means keep all windows as they are.")
+
+        ("lod", po::value<std::vector<std::size_t>>()
+         , "Cherry pick individual output LODs.")
+
+        ("windowFilter", po::value<std::string>()
+         , "Outputs only windows whose name matches provided regex")
         ;
 
     pd
@@ -153,7 +165,22 @@ void VefUpdate::configure(const po::variables_map &vars)
     input_ = fs::absolute(input_);
     output_ = fs::absolute(output_);
 
-    (void) vars;
+    if (vars.count("lod")) {
+        if (vars.count("depth")) {
+            throw std::logic_error
+                ("Options --lod and --depth cannot be used together.");
+        }
+        const auto &lods(vars["lod"].as<std::vector<std::size_t>>());
+        lods_.insert(lods.begin(), lods.end());
+    }
+
+    if (vars.count("depth")) {
+        depth_ = vars["depth"].as<int>();
+    }
+
+    if (vars.count("windowFilter")) {
+        windowFilter_.emplace(vars["windowFilter"].as<std::string>());
+    }
 }
 
 bool VefUpdate::help(std::ostream &out, const std::string &what) const
@@ -200,7 +227,7 @@ math::Extents3 measure(const vef::Archive &in
     } measurer(vef::windowMatrix(in.manifest(), window));
 
     LOG(info3) << "Measuring window "
-               << window.name.value_or(window.path.string())
+               << window.name.value_or(window.path.generic_string())
                << ".";
 
     for (const auto &lod : window.lods) {
@@ -224,21 +251,55 @@ int VefUpdate::run()
     vef::Archive in(input_, false);
 
     vef::Manifest manifest(in.manifest());
+    auto &windows(manifest.windows);
 
-    int count(manifest.windows.size());
+    // simple stuff
+    for (auto ilw(windows.begin()); ilw != windows.end(); ) {
+        auto &lw(*ilw);
+
+        if (!lw.name) { lw.name = lw.path.filename().generic_string(); }
+
+        if (windowFilter_
+            && !std::regex_search(vef::name(lw), *windowFilter_))
+        {
+            // active filter + did not match -> drop
+            ilw = windows.erase(ilw);
+        } else {
+            // keep
+            ++ilw;
+        }
+    }
+
+    int count(windows.size());
 
     UTILITY_OMP(parallel for schedule(dynamic, 1))
     for (int i = 0; i < count; ++i) {
-        auto &lw(manifest.windows[i]);
-        if (!lw.name) { lw.name = lw.path.filename().string(); }
+        auto &lw(windows[i]);
+
         lw.extents = measure(in, lw);
 
-        if (depth_ && (lw.lods.size() > depth_)) {
-            // NB: using first element as value to allow resizing vector of
-            // non-default-constructable type... *sigh*
-            // NB: it's never used, since we are reducing the vector, not
-            // enlarging
-            lw.lods.resize(depth_, lw.lods.front());
+        if (!lods_.empty()) {
+            vef::Window::list lods;
+            for (auto lod : lods_) {
+                if (lod < lw.lods.size()) {
+                    lods.push_back(lw.lods[lod]);
+                }
+            }
+            std::swap(lw.lods, lods);
+        } else if (depth_ > 0) {
+            const std::size_t depth(depth_);
+            if (lw.lods.size() > depth) {
+                // NB: using first element as value to allow resizing vector of
+                // non-default-constructable type... *sigh*
+                // NB: it's never used, since we are reducing the vector, not
+                // enlarging
+                lw.lods.resize(depth, lw.lods.front());
+            }
+        } else if (depth_ < 0) {
+            const std::size_t depth(-depth_);
+            if (lw.lods.size() > depth) {
+                lw.lods.erase(lw.lods.begin(), lw.lods.end() - depth);
+            }
         }
     }
 

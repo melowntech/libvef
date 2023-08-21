@@ -77,7 +77,7 @@ void worldConfiguration(po::options_description &od)
         ;
 }
 
-void configureWorld(boost::optional<vef::World> &world
+void configureWorld(std::optional<vef::World> &world
                     , const po::variables_map &vars)
 {
     bool w(vars.count("world"));

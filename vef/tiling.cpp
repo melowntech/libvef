@@ -270,8 +270,8 @@ MeshInfo measureMeshes(const Archive &archive
             conv.emplace_back(inConv.clone());
         }
 
-        UTILITY_OMP(parallel for default(shared))
-        for (std::int64_t i = 0; i < static_cast<std::int64_t>(windows.size()); ++i) {
+        UTILITY_OMP(for)
+        for (int i = 0; i < static_cast<int>(windows.size()); ++i) {
             const auto &lWindows(windows[i]);
             const auto &window(lWindows.lods.front());
 
@@ -307,8 +307,8 @@ struct MeshParams {
 };
 
 inline double pixelArea(const MeshArea &area
-                        , const boost::optional<double> &resolution
-                        = boost::none)
+                        , const std::optional<double> &resolution
+                        = std::nullopt)
 {
     // override
     if (resolution) { return math::sqr(resolution.value()); }
@@ -327,7 +327,7 @@ inline bool compatible(const geo::SrsDefinition &srs)
 
 MeshParams
 analyzeMesh(const Archive &archive
-            , const boost::optional<double> &resolution = boost::none)
+            , const std::optional<double> &resolution = std::nullopt)
 {
     const auto &srs(archive.manifest().srs.value());
 
@@ -361,7 +361,7 @@ analyzeMesh(const Archive &archive
 
 MeshParams
 analyzeMesh(const Archives &archives
-            , const boost::optional<double> &resolution = boost::none)
+            , const std::optional<double> &resolution = std::nullopt)
 {
     if (archives.size() == 1) {
         // single archive
@@ -410,7 +410,7 @@ analyzeMesh(const Archives &archives
 MeshParams
 analyzeMesh(const Archives &archives
             , const geo::SrsDefinition &srs
-            , const boost::optional<double> &resolution = boost::none)
+            , const std::optional<double> &resolution = std::nullopt)
 {
     // work in given SRS
     MeshInfo mi;
@@ -446,8 +446,8 @@ math::Extents3 makeExtents(const math::Point3 &center
 Tiling::Tiling(const Archives &archives
                , const math::Size2 &optimalTextureSize
                , bool for3dCutting
-               , const boost::optional<double> &resolution
-               , const boost::optional<World> &world
+               , const std::optional<double> &resolution
+               , const std::optional<World> &world
                , std::size_t extraLods)
     : maxLod()
 {

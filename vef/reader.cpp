@@ -35,6 +35,8 @@
 #include "dbglog/dbglog.hpp"
 
 #include "utility/path.hpp"
+#include "utility/gccversion.hpp"
+
 #include "math/transform.hpp"
 
 #include "jsoncpp/json.hpp"
@@ -201,6 +203,7 @@ Manifest loadManifest(const roarchive::IStream::pointer &in
     return loadManifest(in->get(), in->path(), useLocalPaths);
 }
 
+UTILITY_MAYBE_UNUSED
 Manifest loadManifest(const fs::path &path, bool useLocalPaths)
 {
     LOG(info1) << "Loading manifest from " << path  << ".";
@@ -220,14 +223,14 @@ Manifest loadManifest(const fs::path &path, bool useLocalPaths)
 
 fs::path getRoot(const fs::path &def)
 {
-    const auto raw(def.string());
+    const auto raw(def.generic_string());
     const auto semi(raw.find(';'));
     return raw.substr(0, semi);
 }
 
 std::string getManifest(const fs::path &def)
 {
-    const auto raw(def.string());
+    const auto raw(def.generic_string());
     const auto semi(raw.find(';'));
     if (semi == std::string::npos) { return constants::ManifestName; }
     return raw.substr(semi + 1);

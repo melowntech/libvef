@@ -98,6 +98,8 @@ struct Manifest {
     LoddedWindow::list windows;
 };
 
+std::string name(const LoddedWindow &lw);
+
 OptionalMatrix windowMatrix(const Manifest &manifest
                             , const LoddedWindow &window);
 
@@ -211,6 +213,10 @@ UTILITY_GENERATE_ENUM_IO(Mesh::Format,
     ((obj))
     ((gzippedObj)("obj.gz"))
 )
+
+inline std::string name(const LoddedWindow &lw) {
+    return lw.name.value_or(lw.path.generic_string());
+}
 
 } // namespace vef
 

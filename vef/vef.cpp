@@ -121,7 +121,7 @@ void saveManifest(std::ostream &os, const fs::path &path
         if (path.filename() == ".") { path = path.parent_path(); }
         if (root.filename() == ".") { root = root.parent_path(); }
 
-        const auto str(utility::lexically_relative(path, root).string());
+        const auto str(utility::lexically_relative(path, root).generic_string());
         if (str == ".") { return {}; }
         return str;
     });
@@ -213,7 +213,7 @@ fs::path Mesh::mtlPath() const
 {
     const fs::path p(path);
     const auto ext(asExtension(format));
-    auto fname(p.filename().string());
+    auto fname(p.filename().generic_string());
     fname = fname.substr(0, fname.size() - ext.size());
     return p.parent_path() / (fname + constants::MtlExtension);
 }
@@ -234,7 +234,7 @@ void ArchiveWriter::flush()
             int index(0);
             for (const auto &texture : lod.atlas) {
                 f << "newmtl " << index
-                  << "\nmap_Kd " << texture.path.filename().string()
+                  << "\nmap_Kd " << texture.path.filename().generic_string()
                   << "\n";
 
                 ++index;
@@ -278,7 +278,7 @@ Id ArchiveWriter::addWindow(const OptionalString &path
     if (!name) {
         // get name from path/index if not specified
         if (path) {
-            window.name = fs::path(*path).filename().string();
+            window.name = fs::path(*path).filename().generic_string();
         } else {
             window.name = boost::lexical_cast<std::string>(index);
         }
@@ -297,6 +297,42 @@ void ArchiveWriter::deleteWindow(Id windowId)
 
     manifest_.windows.erase(manifest_.windows.begin() + windowId);
 }
+
+namespace {
+
+inline char sanitize(char c) {
+    // safe alpha-numeric characters
+    if (std::isalnum(c)) { return c; }
+
+    // other safe chars
+    switch (c) {
+    case '-':
+    case '.':
+        return c;
+    }
+
+    // everything else -> underscore
+    return '_';
+}
+
+std::string flatten(Id windowId, const LoddedWindow &window
+                    , const std::string &filename)
+{
+    if (!window.name) {
+        LOGTHROW(err1, std::logic_error)
+            << "Cannot flatten nameless window " << windowId
+            << ".";
+    }
+
+    std::ostringstream os;
+
+    for (auto c : *window.name) { os << sanitize(c); }
+
+    os << '-' << filename;
+    return os.str();
+}
+
+} // namespace
 
 Id ArchiveWriter::addLod(Id windowId, const OptionalString &path
                          , Mesh::Format meshFormat)
@@ -326,12 +362,7 @@ Id ArchiveWriter::addLod(Id windowId, const OptionalString &path
     std::string meshPath(str(boost::format(constants::MeshNameFormat)
                              % asExtension(meshFormat)));
     if (flat_) {
-        if (!window.name) {
-            LOGTHROW(err1, std::logic_error)
-                << "Cannot flatten nameless window " << windowId
-                << ".";
-        }
-        meshPath = *window.name + "-" + meshPath;
+        meshPath = flatten(windowId, window, meshPath);
     }
 
     windowLod.mesh.format = meshFormat;
@@ -392,12 +423,7 @@ Texture ArchiveWriter::addTexture(Id windowId, Id lod, const Texture &t
     std::string texturePath(str(boost::format(constants::TextureNameFormat)
                                 % index % asExtension(format)));
     if (flat_) {
-        if (!window.name) {
-            LOGTHROW(err1, std::logic_error)
-                << "Cannot flatten nameless window " << windowId
-                << ".";
-        }
-        texturePath = *window.name + "-" + texturePath;
+        texturePath = flatten(windowId, window, texturePath);
     }
 
     tt.path = (windowLod.path / texturePath);
